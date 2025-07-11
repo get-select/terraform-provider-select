@@ -1,0 +1,66 @@
+provider:
+  name: select
+
+resources:
+  usage_group_set:
+    create:
+      path: /api/{organization_id}/usage-group-sets
+      method: POST
+    read:
+      path: /api/{organization_id}/usage-group-sets/{usage_group_set_id}
+      method: GET
+    update:
+      path: /api/{organization_id}/usage-group-sets/{usage_group_set_id}
+      method: PUT
+    delete:
+      path: /api/{organization_id}/usage-group-sets/{usage_group_set_id}
+      method: DELETE
+    schema:
+      attributes:
+        overrides:
+          name:
+            description: "The name of the usage group set"
+          id:
+            description: "The unique identifier for the usage group set"
+        aliases:
+          usage_group_set_id: id
+
+  usage_group:
+    create:
+      path: /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups
+      method: POST
+    read:
+      path: /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups
+      method: GET
+    update:
+      path: /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
+      method: PUT
+    delete:
+      path: /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
+      method: DELETE
+    schema:
+      ignores:
+        # filter_expression is not supported by the API as it makes heavy use of type unions and
+        # is not supported by our codegen pipeline
+        - filter_expression
+      attributes:
+        overrides:
+          name:
+            description: "The name of the usage group"
+            computed_optional_required: 'required'
+          budget:
+            description: "The budget allocated to this usage group"
+            computed_optional_required: 'required'
+          filter_expression_json:
+            description: "A JSON string representing the filter expression that defines which usage belongs to this group"
+            computed_optional_required: 'required'
+          filter_expression:
+            description: "A JSON object representing the filter expression that defines which usage belongs to this group"
+            computed_optional_required: 'required'
+          usage_group_id:
+            description: "The unique identifier for the usage group"
+            computed_optional_required: 'computed'
+          usage_group_set_id:
+            description: "The ID of the usage group set"
+            computed_optional_required: 'required'
+

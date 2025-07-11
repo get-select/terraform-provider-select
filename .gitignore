@@ -1,0 +1,2 @@
+# some processes build the provider and leave the binary in this dir
+terraform-provider-select

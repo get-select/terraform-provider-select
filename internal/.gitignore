@@ -1,0 +1,3 @@
+# this is the generated code from the OpenAPI spec
+# one creates it by running `make terraform-build` in the `web/api/clients` directory
+provider/
