@@ -102,11 +102,10 @@ resource "select_usage_group" "test_group" {
 
 The general pattern for adding resources is:
 1. Extend public API with new CRUD routes that can manage the resource
-2. Add new routes to `web/api/clients/generator_config.yml`
-3. Run `make terraform-build` in the `web/api/clients` directory
- - This will update the `openapi.public.json` spec, and generate new internal types for the terraform provider
-4. Run `tfplugingen-framework scaffold resource --name <new_resource_name> --output-dir ./terraform/internal`
-- This will create the boilerplate for a new resource type, but it will not be connected to the codegened types we just created
+2. Update the public OpenAPI spec at `https://api.select.dev/public_openapi` (this happens when the backend is deployed)
+3. Run `make reset` in this repository to fetch the latest OpenAPI spec and regenerate the provider code
+4. Run `tfplugingen-framework scaffold resource --name <new_resource_name> --output-dir ./internal`
+   - This will create the boilerplate for a new resource type, but it will not be connected to the codegened types we just created
 5. Connect the generated types to the boilerplate code we just generated. This task should be one shot-able by whatever the flavour of the day LLM is
-6. Add the new resource to the list of resources in `terraform/internal/provider.go`
-7. Build the new terraform provider with `go install .` in `web/api/clients/terraform`
+6. Add the new resource to the list of resources in `internal/provider.go`
+7. Build the new terraform provider with `go install .`

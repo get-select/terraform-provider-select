@@ -4,13 +4,15 @@ codegen-go:
 	tfplugingen-openapi generate \
 		--config generator_config.yml \
 		--output ./internal/provider/provider_code_spec.json \
-		../../openapi.public.json
+		openapi.public.json
 	tfplugingen-framework generate all \
 		--input ./internal/provider/provider_code_spec.json \
 		--output ./internal/provider
 
 codegen:
-	cd ../../../backend && poetry run backend-dump-schema
+	@echo "Fetching OpenAPI spec from public API..."
+	curl -s -o openapi.public.json https://api.select.dev/public_openapi
+	@echo "OpenAPI spec downloaded successfully"
 	make codegen-go
 build:
 	@echo "Building provider..."
@@ -30,6 +32,8 @@ clean:
 	go clean -i ./... || true
 	@echo "Cleaning generated provider code..."
 	rm -rf ./internal/provider/
+	@echo "Cleaning downloaded OpenAPI spec..."
+	rm -f openapi.public.json
 	@echo "Tidying Go modules..."
 	go mod tidy
 	@echo "Clean complete!"
