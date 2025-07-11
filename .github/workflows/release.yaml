@@ -18,23 +18,67 @@ jobs:
   goreleaser:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           # Allow goreleaser to access older tag information.
           fetch-depth: 0
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      
+      - name: Setup Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version-file: 'go.mod'
           cache: true
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+
+      - name: Setup Go environment
+        run: |
+          echo "GOPATH=$HOME/go" >> $GITHUB_ENV
+          echo "GOBIN=$HOME/go/bin" >> $GITHUB_ENV
+          echo "$HOME/go/bin" >> $GITHUB_PATH
+          mkdir -p $HOME/go/bin
+
+      - name: Cache Terraform plugin generators
+        id: cache-terraform-plugins
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: ${{ runner.os }}-terraform-plugins-go-${{ hashFiles('go.mod') }}-v1
+          restore-keys: |
+            ${{ runner.os }}-terraform-plugins-go-
+
+      - name: Install Terraform plugin generators
+        if: steps.cache-terraform-plugins.outputs.cache-hit != 'true'
+        run: |
+          go install github.com/hashicorp/terraform-plugin-codegen-openapi/cmd/tfplugingen-openapi@latest
+          go install github.com/hashicorp/terraform-plugin-codegen-framework/cmd/tfplugingen-framework@latest
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Generate provider code
+        run: |
+          echo "Running codegen to generate provider code from OpenAPI spec..."
+          make codegen
+
       - name: Import GPG key
         uses: crazy-max/ghaction-import-gpg@e89d40939c28e39f97cf32126055eeae86ba74ec # v6.3.0
         id: import_gpg
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
-      - name: Run Codegen
-        run: |
-          make codegen
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
         with:
