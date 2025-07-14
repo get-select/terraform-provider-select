@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 # Main configuration file for Terraform provider testing
 
 terraform {

@@ -1,111 +1,214 @@
-# Select Terraform Provider
+# Terraform Provider for Select
 
-workflow comes from here
-https://developer.hashicorp.com/terraform/plugin/code-generation/workflow-example
+The Select Terraform Provider enables you to manage resources in the Select data platform using Terraform. SELECT helps organizations optimize their Snowflake usage, for more information visit our website https://select.dev/ .
 
-These are mieks notes as he got it working
+## Requirements
 
-u need to install go and terraform to work on this
+- [Terraform](https://www.terraform.io/downloads.html) >= 0.13
+- [Go](https://golang.org/doc/install) >= 1.20 (for building the provider)
 
-internal is all codegened stuff, it's based off the public openapi spec
+## Installation
 
-main.go is small batch homegrown code
+### Terraform Registry
 
-## Development Setup
-
-after installing gfo you should do
-export GOPATH="$HOME/go/bin"
-to set GOPATH which this project relies on
-
-you also need to make a .terraformrc to override terraform for development.
-
-`make setup-dev-overrides`
-
-to configure this
-```
-
-
-if this is properly setup terraform plan will print this
-```
-│ Warning: Provider development overrides are in effect
-...
-```
-
-## Importing Existing Resources
-
-The Select Terraform provider supports importing existing resources that were created outside of Terraform. This allows you to bring existing infrastructure under Terraform management without recreating it.
-
-**📖 See [IMPORT.md](./IMPORT.md) for detailed import instructions**
-
-### Quick Reference:
-
-**Usage Group Set:**
-```bash
-terraform import select_usage_group_set.<resource_name> <usage_group_set_id>
-```
-
-**Usage Group:**
-```bash
-terraform import select_usage_group.<resource_name> <usage_group_set_id>/<usage_group_id>
-```
-
-**Note:** You can find the required IDs in the Select UI under the Usage Groups section.
-
-Usage Group Set Ids can be located in the query params when you select a usage group set, for example
-
-`/app/<snowflake account uuid>/usage-groups/definitions?usageGroupSetId=<selected usage group set uuid>`
-
-Usage Group id's can be found by switching from 'interactive' mode to JSON mode, for example:
-```json
-[
-  {
-    "name": "example-usage-group",
-    "budget": 1000,
-    "filter_expression": {
-      "operator": "or",
-      "filters": [
-        {
-          "field": "warehouse_name",
-          "values": [
-            "SELECT_BACKEND",
-            "SELECT_BACKEND_LARGE"
-          ],
-          "operator": "in"
-        }
-      ]
-    },
-    "usage_group_id": "38fccd46-6b3e-4a02-ab08-5fff826f4147"
+<!-- TODO for humans: Update registry path once published to official Terraform Registry -->
+```hcl
+terraform {
+  required_providers {
+    select = {
+      source  = "hashicorp.com/edu/select"
+      version = "~> 0.1"
+    }
   }
-]
+}
 ```
-This is also useful for copying the filter expression, for the above usage group, an equivalent block would be
 
-```tf
-resource "select_usage_group" "test_group" {
-  name               = "example-usage-group"
+### Local Development
+
+For local development, you can build and install the provider locally:
+
+```bash
+git clone https://github.com/TODO_REPO_URL/terraform-provider-select
+cd terraform-provider-select
+make install
+```
+
+## Usage
+
+### Provider Configuration
+
+```hcl
+provider "select" {
+  api_key         = var.select_api_key
+  organization_id = var.select_organization_id
+  # select_api_url = "https://api.select.dev"  # Optional, defaults to https://api.select.dev
+}
+```
+
+### Configuration Options
+
+- `api_key` (Required, String, Sensitive) - The API key for authenticating with the Select API. This key must have write access to the resources you wish to create. API Keys can be created in the API Keys tab on the settings page of the Select app.
+- `organization_id` (Required, String) - The organization ID for the Select account. Available from the profile overview tab on the settings page in the Select app.
+- `select_api_url` (Optional, String) - The base URL for the Select API. Defaults to `https://api.select.dev`.
+
+### Basic Example
+
+```hcl
+terraform {
+  required_providers {
+    select = {
+      source  = "hashicorp.com/edu/select"
+      version = "~> 0.1"
+    }
+  }
+}
+
+provider "select" {
+  api_key         = var.select_api_key
+  organization_id = var.select_organization_id
+}
+
+# Create a usage group set
+resource "select_usage_group_set" "production" {
+  name                   = "Production Workloads"
+  order                  = 1
+  snowflake_account_uuid = var.snowflake_account_uuid
+}
+
+# Create a usage group
+resource "select_usage_group" "analytics" {
+  name               = "Analytics Team"
   order              = 1
-  budget             = 1000.0
-  usage_group_set_id = select_usage_group_set.test_set.id
+  budget             = 5000.0
+  usage_group_set_id = select_usage_group_set.production.id
+  
   filter_expression_json = jsonencode({
-    "operator" : "or",
-    "filters" : [
+    operator = "and"
+    filters = [
       {
-        "field" : "warehouse_name",
-        "values" : ["SELECT_BACKEND", "SELECT_BACKEND_LARGE"],
-        "operator" : "in",
+        field    = "role_name"
+        operator = "in"
+        values   = ["ANALYST", "DATA_SCIENTIST"]
       }
-    ],
+    ]
   })
 }
 ```
-## Development - Adding New Resources
 
-The general pattern for adding resources is:
-1. Extend public API with new CRUD routes that can manage the resource
-2. Update the public OpenAPI spec at `https://api.select.dev/public_openapi` (this happens when the backend is deployed)
-3. Run `make reset` in this repository to fetch the latest OpenAPI spec and regenerate the provider code
-4. Run `tfplugingen-framework scaffold resource --name <new_resource_name> --output-dir ./internal`
-   - This will create the boilerplate for a new resource type, but it will not be connected to the codegened types we just created
-5. Connect the generated types to the boilerplate code we just generated. This task should be one shot-able by whatever the flavour of the day LLM is
-6. Add the new resource to the list of resources in `internal/provider.go`
-7. Build the new terraform provider with `go install .`
+## Available Resources
+
+### Resources
+
+- [`select_usage_group_set`](docs/resources/usage_group_set.md) - Manages usage group sets, which are logical groupings of usage groups
+- [`select_usage_group`](docs/resources/usage_group.md) - Manages individual usage groups within a usage group set
+
+### Data Sources
+
+<!-- TODO for humans: Add data sources documentation when available -->
+Currently, this provider does not expose any data sources.
+
+## Documentation
+
+- [Provider Documentation](docs/index.md)
+- [Import Guide](IMPORT.md) - Comprehensive guide for importing existing resources
+- [Resource Documentation](docs/resources/)
+
+## Authentication
+
+The Select provider requires an API key and organization ID for authentication:
+
+1. **API Key**: Generate an API key in the Select app:
+   - Navigate to Settings → API Keys
+   - Create a new API key with write permissions
+   
+2. **Organization ID**: Find your organization ID in the Select app:
+   - Navigate to Settings → Profile Overview
+   - Copy the organization ID
+
+### Environment Variables
+
+You can set credentials using environment variables:
+
+```bash
+export TF_VAR_select_api_key="your-api-key-here"
+export TF_VAR_select_organization_id="your-org-id-here"
+```
+
+## Examples
+
+More comprehensive examples can be found in the [examples](examples/) directory.
+
+## Importing Existing Resources
+
+The Select provider supports importing existing resources created outside of Terraform. See the [Import Guide](IMPORT.md) for detailed instructions.
+
+Quick reference:
+- **Usage Group Set**: `terraform import select_usage_group_set.example <usage_group_set_id>`
+- **Usage Group**: `terraform import select_usage_group.example <usage_group_set_id>/<usage_group_id>`
+
+## Development
+
+### Building the Provider
+
+```bash
+git clone https://github.com/TODO_REPO_URL/terraform-provider-select
+cd terraform-provider-select
+make build
+```
+
+### Local Installation
+
+```bash
+make install
+```
+
+### Running Tests
+
+```bash
+# Set required environment variables
+export TF_VAR_select_api_key="your-test-api-key"
+export TF_VAR_select_organization_id="your-test-org-id"
+
+# Run tests
+make test
+```
+
+### Development Setup
+
+For local development with Terraform, you can use development overrides:
+
+```bash
+make setup-dev-overrides
+```
+
+This will configure Terraform to use your locally built provider instead of downloading from the registry.
+
+## Contributing
+
+<!-- TODO for humans: Add contributing guidelines URL once repository is public -->
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Reporting Issues
+
+If you encounter any issues, please [open an issue](https://github.com/TODO_REPO_URL/terraform-provider-select/issues) with:
+- Terraform version
+- Provider version
+- A minimal reproduction case
+- Full error messages
+
+## License
+
+This project is licensed under the Mozilla Public License 2.0 - see https://mozilla.org/MPL/2.0/ for details.
+
+## Support
+
+- [GitHub Issues](https://github.com/TODO_REPO_URL/terraform-provider-select/issues)
+- [Select Documentation](https://select.dev/docs)
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for information about changes in each release.
+
+---
+
+**Note**: This provider is for managing Select platform resources. For general Snowflake resource management, use the [Snowflake Terraform Provider](https://registry.terraform.io/providers/Snowflake-Labs/snowflake/latest).

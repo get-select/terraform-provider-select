@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: MPL-2.0
+
 .PHONY: codegen build install clean reset test test-all test-validate test-clean setup-dev-overrides docs
 codegen-go:
 	mkdir -p ./internal/provider

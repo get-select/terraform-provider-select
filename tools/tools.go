@@ -1,5 +1,7 @@
 //go:build tools
 
+// SPDX-License-Identifier: MPL-2.0
+
 package tools
 
 import (
