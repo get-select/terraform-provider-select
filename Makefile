@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-all test-validate test-clean setup-dev-overrides docs
+.PHONY: codegen build install clean reset test test-all test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 codegen-go:
 	mkdir -p ./internal/provider
 	tfplugingen-openapi generate \
@@ -54,6 +54,7 @@ setup-dev-overrides:
 	fi
 	@echo "Dev overrides configured in ~/.terraform.d/.terraformrc"
 	cat ~/.terraform.d/.terraformrc
+	cp ~/.terraform.d/.terraformrc ./.terraformrc
 
 
 # Testing targets
@@ -91,6 +92,21 @@ docs:
 	tfplugindocs generate --provider-name=select --providers-schema=providers-schema.json
 	rm providers-schema.json
 
+
+remote-ci-test-suite:
+	@echo "Starting complete CI test suite..."
+	@echo "Note: This command requires TF_VAR_select_api_key and TF_VAR_select_organization_id environment variables to be set"
+	@echo "Cleaning up any existing binaries..."
+	make clean
+	@echo "Generating code from OpenAPI spec..."
+	make codegen
+	@echo "Setting up dev overrides..."
+	make setup-dev-overrides
+	@echo "Building and installing provider..."
+	make install
+	@echo "Running tests with dev overrides..."
+	@cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test provider.tftest.hcl
+	@echo "Remote CI test suite completed successfully!"
 
 # Help target
 help:

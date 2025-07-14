@@ -12,7 +12,7 @@ import (
 
 func main() {
 	opts := providerserver.ServeOpts{
-		Address: "get-select/select",
+		Address: "registry.terraform.io/get-select/select",
 	}
 
 	err := providerserver.Serve(context.Background(), provider.New(), opts)
