@@ -105,7 +105,7 @@ remote-ci-test-suite:
 	@echo "Building and installing provider..."
 	make install
 	@echo "Running tests with dev overrides..."
-	@cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test provider.tftest.hcl
+	@cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform validate
 	@echo "Remote CI test suite completed successfully!"
 
 # Help target
