@@ -12,7 +12,7 @@ import (
 
 func main() {
 	opts := providerserver.ServeOpts{
-		Address: "hashicorp.com/edu/select",
+		Address: "get-select/select",
 	}
 
 	err := providerserver.Serve(context.Background(), provider.New(), opts)

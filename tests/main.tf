@@ -5,7 +5,7 @@
 terraform {
   required_providers {
     select = {
-      source = "hashicorp.com/edu/select"
+      source = "get-select/select"
     }
   }
 }

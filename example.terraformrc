@@ -5,7 +5,7 @@ provider_installation {
   dev_overrides {
     # Example GOBIN path, will need to be replaced with your own GOBIN path. Default is $GOPATH/bin
     # This redirects terraform to the local version of our provider for development
-    "hashicorp.com/edu/select" = "{{GO_PATH_BIN}}"
+    "get-select/select" = "{{GO_PATH_BIN}}"
   }
 
   # For all other providers, install them directly from their origin provider

@@ -163,7 +163,7 @@ First, create your Terraform configuration file with the resource definitions:
 terraform {
   required_providers {
     select = {
-      source = "hashicorp.com/edu/select"
+      source = "get-select/select"
     }
   }
 }

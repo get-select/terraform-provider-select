@@ -16,7 +16,7 @@ The Select Terraform Provider enables you to manage resources in the Select data
 terraform {
   required_providers {
     select = {
-      source  = "hashicorp.com/edu/select"
+      source  = "get-select/select"
       version = "~> 0.1"
     }
   }
@@ -57,7 +57,7 @@ provider "select" {
 terraform {
   required_providers {
     select = {
-      source  = "hashicorp.com/edu/select"
+      source  = "get-select/select"
       version = "~> 0.1"
     }
   }
