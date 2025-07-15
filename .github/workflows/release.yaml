@@ -68,10 +68,12 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Generate provider code
+      # make docs requires terraform init
         run: |
           echo "Running codegen to generate provider code from OpenAPI spec..."
           make codegen
           echo "Generating docs"
+          terraform init
           make docs
 
       - name: Import GPG key
