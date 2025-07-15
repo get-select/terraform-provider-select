@@ -60,6 +60,6 @@ resource "select_usage_group" "example_usage_group" {
 This resource could be imported like
 `terraform import select_usage_group.example_usage_group <usage group set id>/<usage group id>`
 
-This uses a hierarchical id where `<usage group set id>` is the id of the usage group set this resource belongs to, and `<usage group id>` can be found on the usage groups page of the SELECT app by switching from interactive mode to 
+This uses a hierarchical id where `<usage group set id>` is the id of the usage group set this resource belongs to, and `<usage group id>` can be found on the usage groups page of the SELECT app by switching from interactive mode to JSON mode.
 
 Next, run `terraform plan` and update the `example_usage_group_set` resource block until no changes to the imported resource are planned.

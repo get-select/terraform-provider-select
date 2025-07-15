@@ -1,214 +1,231 @@
-# Terraform Provider for Select
+# Terraform Provider for Select - Development
 
-The Select Terraform Provider enables you to manage resources in the Select data platform using Terraform. SELECT helps organizations optimize their Snowflake usage, for more information visit our website https://select.dev/ .
+This repository contains the source code for the [Select Terraform Provider](https://registry.terraform.io/providers/get-select/select). This provider is _mostly_ **auto-generated** from Select's public OpenAPI specification, enabling developers to manage Select platform resources through Terraform.
 
-## Requirements
+> **For usage documentation and examples**, visit the [official Terraform Registry documentation](https://registry.terraform.io/providers/get-select/select/latest/docs).
 
-- [Terraform](https://www.terraform.io/downloads.html) >= 0.13
-- [Go](https://golang.org/doc/install) >= 1.20 (for building the provider)
+## About Select
 
-## Installation
+[Select](https://select.dev) helps organizations optimize their Snowflake usage and costs. This Terraform provider enables Infrastructure as Code management of Select platform resources like usage groups and usage group sets.
 
-### Terraform Registry
+## Architecture Overview
 
-<!-- TODO for humans: Update registry path once published to official Terraform Registry -->
-```hcl
-terraform {
-  required_providers {
-    select = {
-      source  = "get-select/select"
-      version = "~> 0.1"
-    }
-  }
-}
-```
+This provider is built using:
+- **[Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)** - Modern Terraform provider development
+- **[tfplugingen-openapi](https://github.com/hashicorp/terraform-plugin-codegen-openapi)** - OpenAPI to Terraform schema generation  
+- **[tfplugingen-framework](https://github.com/hashicorp/terraform-plugin-codegen-framework)** - Framework code generation
+- **Select's Public OpenAPI Spec** - Single source of truth hosted at `https://api.select.dev/public_openapi`
 
-### Local Development
+### Code Generation Workflow
 
-For local development, you can build and install the provider locally:
+The provider code is generated from Select's public OpenAPI specification:
+
+1. **Fetch OpenAPI Spec**: Downloads the latest spec from `https://api.select.dev/public_openapi`
+2. **Generate Schema**: `tfplugingen-openapi` converts OpenAPI spec to Terraform schema definitions
+3. **Generate Code**: `tfplugingen-framework` creates the final provider code
+4. **Manual Customization**: Configuration in `generator_config.yml` allows for customizations and overrides
+
+This ensures the provider stays in sync with Select's API automatically.
+
+## Development Requirements
+
+- **[Go](https://golang.org/doc/install)** >= 1.24.4
+- **[Terraform](https://www.terraform.io/downloads.html)** >= 1.7.0
+
+### Required Tools
+
+The following tools are automatically installed during the build process:
 
 ```bash
-git clone https://github.com/TODO_REPO_URL/terraform-provider-select
+# These are installed automatically by the Makefile
+go install github.com/hashicorp/terraform-plugin-codegen-openapi/cmd/tfplugingen-openapi@latest
+go install github.com/hashicorp/terraform-plugin-codegen-framework/cmd/tfplugingen-framework@latest
+```
+
+## Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/get-select/terraform-provider-select
 cd terraform-provider-select
-make install
-```
 
-## Usage
+# Generate provider code from OpenAPI spec and build
+make reset
 
-### Provider Configuration
-
-```hcl
-provider "select" {
-  api_key         = var.select_api_key
-  organization_id = var.select_organization_id
-  # select_api_url = "https://api.select.dev"  # Optional, defaults to https://api.select.dev
-}
-```
-
-### Configuration Options
-
-- `api_key` (Required, String, Sensitive) - The API key for authenticating with the Select API. This key must have write access to the resources you wish to create. API Keys can be created in the API Keys tab on the settings page of the Select app.
-- `organization_id` (Required, String) - The organization ID for the Select account. Available from the profile overview tab on the settings page in the Select app.
-- `select_api_url` (Optional, String) - The base URL for the Select API. Defaults to `https://api.select.dev`.
-
-### Basic Example
-
-```hcl
-terraform {
-  required_providers {
-    select = {
-      source  = "get-select/select"
-      version = "~> 0.1"
-    }
-  }
-}
-
-provider "select" {
-  api_key         = var.select_api_key
-  organization_id = var.select_organization_id
-}
-
-# Create a usage group set
-resource "select_usage_group_set" "production" {
-  name                   = "Production Workloads"
-  order                  = 1
-  snowflake_account_uuid = var.snowflake_account_uuid
-}
-
-# Create a usage group
-resource "select_usage_group" "analytics" {
-  name               = "Analytics Team"
-  order              = 1
-  budget             = 5000.0
-  usage_group_set_id = select_usage_group_set.production.id
-  
-  filter_expression_json = jsonencode({
-    operator = "and"
-    filters = [
-      {
-        field    = "role_name"
-        operator = "in"
-        values   = ["ANALYST", "DATA_SCIENTIST"]
-      }
-    ]
-  })
-}
-```
-
-## Available Resources
-
-### Resources
-
-- [`select_usage_group_set`](docs/resources/usage_group_set.md) - Manages usage group sets, which are logical groupings of usage groups
-- [`select_usage_group`](docs/resources/usage_group.md) - Manages individual usage groups within a usage group set
-
-### Data Sources
-
-<!-- TODO for humans: Add data sources documentation when available -->
-Currently, this provider does not expose any data sources.
-
-## Documentation
-
-- [Provider Documentation](docs/index.md)
-- [Import Guide](IMPORT.md) - Comprehensive guide for importing existing resources
-- [Resource Documentation](docs/resources/)
-
-## Authentication
-
-The Select provider requires an API key and organization ID for authentication:
-
-1. **API Key**: Generate an API key in the Select app:
-   - Navigate to Settings → API Keys
-   - Create a new API key with write permissions
-   
-2. **Organization ID**: Find your organization ID in the Select app:
-   - Navigate to Settings → Profile Overview
-   - Copy the organization ID
-
-### Environment Variables
-
-You can set credentials using environment variables:
-
-```bash
-export TF_VAR_select_api_key="your-api-key-here"
-export TF_VAR_select_organization_id="your-org-id-here"
-```
-
-## Examples
-
-More comprehensive examples can be found in the [examples](examples/) directory.
-
-## Importing Existing Resources
-
-The Select provider supports importing existing resources created outside of Terraform. See the [Import Guide](IMPORT.md) for detailed instructions.
-
-Quick reference:
-- **Usage Group Set**: `terraform import select_usage_group_set.example <usage_group_set_id>`
-- **Usage Group**: `terraform import select_usage_group.example <usage_group_set_id>/<usage_group_id>`
-
-## Development
-
-### Building the Provider
-
-```bash
-git clone https://github.com/TODO_REPO_URL/terraform-provider-select
-cd terraform-provider-select
-make build
-```
-
-### Local Installation
-
-```bash
-make install
-```
-
-### Running Tests
-
-```bash
-# Set required environment variables
-export TF_VAR_select_api_key="your-test-api-key"
-export TF_VAR_select_organization_id="your-test-org-id"
-
-# Run tests
-make test
-```
-
-### Development Setup
-
-For local development with Terraform, you can use development overrides:
-
-```bash
+# Set up local development
 make setup-dev-overrides
 ```
 
-This will configure Terraform to use your locally built provider instead of downloading from the registry.
+## Development Commands
+
+| Command | Description |
+|---------|-------------|
+| `make help` | Show all available commands |
+| `make codegen` | Download OpenAPI spec and generate provider code |
+| `make build` | Build the provider binary |
+| `make install` | Install provider locally for testing |
+| `make setup-dev-overrides` | Configure Terraform to use local provider |
+| `make test` | Run provider tests |
+| `make clean` | Remove all generated files and build artifacts |
+| `make reset` | Full reset: clean, regenerate, and install |
+
+### Development Workflow
+
+1. **Initial Setup**:
+   ```bash
+   make reset                    # Generate code and build
+   make setup-dev-overrides     # Configure local development overrides
+   ```
+
+2. **Making Changes**:
+   ```bash
+   # After modifying generator_config.yml or when API updates:
+   make reset
+   
+   # For code-only changes (if manually editing generated code):
+   make build install
+   ```
+
+  Types from the API spec are added to `internal/provider/`. Some boilerplate is then needed to connect those types to the Api in a way that terraform understands. There is one of these per resource in `internal/`.
+
+3. **Testing**:
+
+  Testign requires and API key and organization generated from teh SELECT backend you wish to test against. You can generate an API key in Settings -> API Keys and you can find your organization id in Settings -> Profile.
+   ```bash
+   # Set required environment variables
+   export TF_VAR_select_api_key="your-api-key"
+   export TF_VAR_select_organization_id="your-org-id"
+   
+   # Run tests
+   make test
+   ```
+
+## Configuration Files
+
+### `generator_config.yml`
+Configures the code generation process:
+- Resource mappings (API endpoints to Terraform resources)
+- Schema overrides and customizations
+- Field descriptions and validation rules
+- Ignored fields that don't map well to Terraform
+
+### `example.terraformrc`
+Template for Terraform development overrides that allows using the locally built provider instead of downloading from the registry.
+
+## Project Structure
+
+```
+terraform-provider-select/
+├── internal/                    # Hand-written provider core
+│   ├── provider.go             # Provider configuration and setup
+│   ├── api.go                  # HTTP client and API utilities
+│   ├── usage_group_resource.go # Custom resource implementations
+│   └── provider/               # Generated code (git-ignored)
+├── tests/                      # Provider tests
+├── docs/                       # Generated documentation
+├── examples/                   # Usage examples
+├── generator_config.yml        # Code generation configuration
+├── Makefile                    # Development commands
+└── main.go                     # Provider entry point
+```
+
+## OpenAPI Dependency
+
+**Important**: This provider is entirely dependent on Select's public OpenAPI specification. The specification is:
+
+- **Hosted at**: `https://api.select.dev/public_openapi`
+- **Auto-fetched**: Every `make codegen` downloads the latest spec
+- **Single Source of Truth**: Changes to the API automatically reflect in the provider
+
+If the OpenAPI endpoint is unavailable, the code generation will fail. For offline development, you can work with a previously downloaded `openapi.public.json` file.
+
+## Testing
+
+The provider includes comprehensive tests that validate functionality against the live Select API:
+
+```bash
+# Run all tests
+make test
+
+# Run specific test files  
+cd tests && terraform test provider.tftest.hcl
+
+# Run specific test cases
+cd tests && terraform test provider.tftest.hcl -filter=create_usage_group_set
+```
+
+**Note**: Tests require valid Select API credentials and will create/modify real resources.
+
+## Documentation Generation
+
+Documentation is auto-generated from the provider schema:
+
+```bash
+make docs
+```
+
+This creates documentation in the `docs/` directory that matches the format used in the Terraform Registry.
+
+## Release Process
+
+Releases are automated via GitHub Actions when tags are pushed:
+
+1. Code is generated from the latest OpenAPI spec
+2. Provider is built for multiple platforms
+3. Binaries are signed and uploaded to GitHub releases
+4. Terraform Registry is automatically updated
 
 ## Contributing
 
-<!-- TODO for humans: Add contributing guidelines URL once repository is public -->
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+1. **Fork** the repository
+2. **Create a feature branch** from `main`
+3. **Make your changes** to `generator_config.yml` or core provider files
+4. **Test your changes** with `make test`
+5. **Submit a pull request**
 
-### Reporting Issues
+### Common Development Tasks
 
-If you encounter any issues, please [open an issue](https://github.com/TODO_REPO_URL/terraform-provider-select/issues) with:
-- Terraform version
-- Provider version
-- A minimal reproduction case
-- Full error messages
+**Adding a new resource**:
+1. Update `generator_config.yml` with the new resource configuration
+2. Run `make reset` to regenerate code
+3. Add any custom logic in `internal/`
+4. Add tests in `tests/`
+
+**Modifying existing resources**:
+1. Update the relevant section in `generator_config.yml`
+2. Run `make reset`
+3. Test changes with `make test`
+
+## Troubleshooting
+
+**"Provider not found" errors**:
+```bash
+make setup-dev-overrides  # Ensure dev overrides are configured
+```
+
+**Code generation failures**:
+```bash
+# Check internet connection and try again
+make clean && make codegen
+```
+
+**Test failures**:
+```bash
+# Ensure credentials are set
+export TF_VAR_select_api_key="your-key"
+export TF_VAR_select_organization_id="your-org-id"
+
+# Clean test state
+make test-clean && make test
+```
+
+## Links
+
+- **[Terraform Registry](https://registry.terraform.io/providers/get-select/select/latest)** - Official provider documentation and usage examples
+- **[Select Platform](https://select.dev)** - Select platform documentation
+- **[Provider Issues](https://github.com/get-select/terraform-provider-select/issues)** - Report bugs or request features
+- **[Terraform Plugin Framework](https://developer.hashicorp.com/terraform/plugin/framework)** - Framework documentation
 
 ## License
 
-This project is licensed under the Mozilla Public License 2.0 - see https://mozilla.org/MPL/2.0/ for details.
-
-## Support
-
-- [GitHub Issues](https://github.com/TODO_REPO_URL/terraform-provider-select/issues)
-- [Select Documentation](https://select.dev/docs)
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for information about changes in each release.
-
----
-
-**Note**: This provider is for managing Select platform resources. For general Snowflake resource management, use the [Snowflake Terraform Provider](https://registry.terraform.io/providers/Snowflake-Labs/snowflake/latest).
+This project is licensed under the Mozilla Public License 2.0 - see the [LICENSE](LICENSE) file for details.
