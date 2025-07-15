@@ -1,18 +1,11 @@
 <!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
----
-page_title: "{{ .Name }} Resource - {{ .ProviderName }}"
-subcategory: ""
-description: |-
-  {{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
----
-
 # {{ .Name }} (Resource)
 
 {{ .Description | trimspace }}
 
 ## About 
 
-Usage Groups provide a flexible way of creating cost categories within SELECT.To learn more about usage groups, see the [SELECT documentation](https://select.dev/docs/usage-groups/usage-group-sets).
+Usage Groups provide a flexible way of creating cost categories within SELECT. To learn more about usage groups, see the [SELECT documentation](https://select.dev/docs/reference/using-select/usage-groups).
 
 ## Example Usage
 
@@ -80,25 +73,19 @@ The following arguments are supported:
 
 {{ .SchemaMarkdown | trimspace }}
 
-## Filter Expression Reference
+## Filter Expressions
 
-The `filter_expression_json` field accepts a JSON encoded object that will be validated when applied.
+The `filter_expression_json` field accepts a JSON encoded object that will be validated when applied. There's a wide variety of fields that can be filtered on depending on the type of usage group (Snowflake account or organization owned). 
 
-For complicated filter expressions such as those containing multiple statements, we suggest using the SELECT UI to configure something close to the structure you need, and then switching to JSON mode and copying the expression into your terraform code.
+To explore the fields that can be filtered on, or for complicated filter expressions containing multiple statements, we suggest using the SELECT UI to configure something close to the structure you need, and then switching to JSON mode and copying the expression into your terraform code.
 
 ## Import
 
 {{ .Name }} can be imported using the usage group set ID and usage group ID separated by a forward slash:
 
-{{ if .HasImport }}
-```bash
-{{ tffile .ImportFile }}
-```
-{{ else }}
 ```bash
 terraform import {{ .Name }}.example <usage_group_set_id>/<usage_group_id>
 ```
-{{ end }}
 
 ## Additional Information
 
