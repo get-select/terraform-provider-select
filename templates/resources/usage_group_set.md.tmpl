@@ -1,0 +1,44 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+---
+page_title: "{{ .Name }} Resource - {{ .ProviderName }}"
+subcategory: ""
+description: |-
+  {{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+Usage Group sets are a way to group usage groups together, to learn more about usage groups, see the [SELECT documentation](https://select.dev/docs/usage-groups/usage-group-sets).
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+## Argument Reference
+
+The following arguments are supported:
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+{{ .Name }} can be imported using the usage group set ID:
+
+{{ if .HasImport }}
+```bash
+{{ tffile .ImportFile }}
+```
+{{ else }}
+```bash
+terraform import {{ .Name }}.example <usage_group_set_id>
+```
+{{ end }}
+
+## Additional Information
+
+### Usage Group Set Ordering
+
+The `order` field determines the display order in the Select UI.

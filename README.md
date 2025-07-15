@@ -158,7 +158,7 @@ cd tests && terraform test provider.tftest.hcl -filter=create_usage_group_set
 
 ## Documentation Generation
 
-Documentation is auto-generated from the provider schema:
+Some documentation is semi auto-generated from the provider schema. Field descriptions are pulled from the Open API spec and should be changed in the backends endpoint metadata. Other parts of the documentation are maintained in `templates/`
 
 ```bash
 make docs
@@ -168,7 +168,7 @@ This creates documentation in the `docs/` directory that matches the format used
 
 ## Release Process
 
-Releases are automated via GitHub Actions when tags are pushed:
+Releases are automated via GitHub Actions when tags are pushed, you can also create a new release via the github UI by creating a release with a new tag that objects the [Semantic Versioning](https://semver.org/) format, for example: `v1.2.3`. 
 
 1. Code is generated from the latest OpenAPI spec
 2. Provider is built for multiple platforms

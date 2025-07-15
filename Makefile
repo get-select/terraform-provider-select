@@ -88,8 +88,10 @@ test: test-all
 
 docs:
 	@echo "Generating provider schema and documentation..."
-	terraform providers schema -json | sed 's/"hashicorp.com\/edu\/select"/"select"/g' > providers-schema.json
-	tfplugindocs generate --provider-name=select --providers-schema=providers-schema.json
+	@echo "Note: This requires the provider to be built and dev overrides to be configured"
+	@echo "Using templates from templates/ directory to preserve custom documentation"
+	@cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform providers schema -json | sed 's/"registry.terraform.io\/get-select\/select"/"select"/g' > ../providers-schema.json
+	tfplugindocs generate --provider-name=select --providers-schema=providers-schema.json --website-source-dir=templates
 	rm providers-schema.json
 
 
@@ -115,6 +117,7 @@ help:
 	@echo "  build            - Build the provider"
 	@echo "  install          - Install the provider locally"
 	@echo "  setup-dev-overrides - Setup Terraform dev overrides for local development"
+	@echo "  docs             - Generate provider documentation (requires build + dev overrides)"
 	@echo "  clean            - Clean build artifacts and state files"
 	@echo "  reset            - Complete reset: clean, codegen, and install"
 	@echo ""

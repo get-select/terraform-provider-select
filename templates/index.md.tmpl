@@ -1,0 +1,34 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+---
+page_title: "{{ .ProviderShortName | title }} Provider"
+description: |-
+  The {{ .ProviderShortName | title }} provider is used to manage resources in the Select data platform. Select helps organizations optimize their Snowflake costs by providing usage group management and cost allocation capabilities.
+---
+
+# {{ .ProviderShortName | title }} Provider
+
+The {{ .ProviderShortName | title }} provider is used to manage resources in the SELECT data platform. SELECT helps organizations optimize their Snowflake costs by providing usage group management and cost allocation capabilities.
+
+## About Select
+
+[Select](https://select.dev) helps organizations optimize their Snowflake usage and costs. This Terraform provider enables Infrastructure as Code management of Select platform resources like usage groups and usage group sets.
+
+
+
+## Example Usage
+
+{{ tffile "examples/provider/provider.tf" }}
+
+## Authentication
+
+The Select provider requires an API key and organization ID for authentication:
+
+1. **API Key**: Generate an API key in the Select app:
+   - Navigate to Settings → API Keys
+   - Create a new API key with write permissions for the resoruces you would like to manage
+   
+2. **Organization ID**: Find your organization ID in the Select app:
+   - Navigate to Settings → Profile Overview
+   - Copy the organization ID
+
+{{ .SchemaMarkdown | trimspace }} 

@@ -1,0 +1,2 @@
+# Usage group can be imported using the usage group set ID and usage group ID separated by a forward slash
+terraform import select_usage_group.example 12345678-1234-1234-1234-123456789012/87654321-4321-4321-4321-210987654321 
