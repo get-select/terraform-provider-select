@@ -73,7 +73,7 @@ jobs:
           echo "Running codegen to generate provider code from OpenAPI spec..."
           make codegen
           echo "Generating docs"
-          terraform init
+          make setup-dev-overrides
           make docs
 
       - name: Import GPG key
