@@ -2,7 +2,7 @@
 
 # Select Provider
 
-The Select provider is used to manage resources in the [SELECT](https://select.dev) data platform. SELECT helps organizations optimize their Snowflake costs by providing usage group management and cost allocation capabilities.
+The Select provider is used to manage resources in the [SELECT](https://select.dev) Snowflake optimization and cost management platform.
 
 ## Example Usage
 

@@ -94,6 +94,8 @@ docs:
 	tfplugindocs generate --provider-name=select --providers-schema=providers-schema.json --website-source-dir=templates
 	rm providers-schema.json
 
+	@echo "Consider using https://registry.terraform.io/tools/doc-preview to preview the documentation"
+
 
 remote-ci-test-suite:
 	@echo "Starting complete CI test suite..."

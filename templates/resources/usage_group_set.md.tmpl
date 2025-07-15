@@ -10,15 +10,11 @@ Usage Group sets are a way to group usage groups together, to learn more about u
 
 {{ tffile .ExampleFile }}
 
-## Argument Reference
-
-The following arguments are supported:
-
 {{ .SchemaMarkdown | trimspace }}
 
 ## Import
 
-{{ .Name }} can be imported using the usage group set ID:
+`{{ .Name }}` can be imported using the usage group set ID:
 
 ```bash
 terraform import {{ .Name }}.example <usage_group_set_id>

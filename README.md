@@ -166,6 +166,8 @@ make docs
 
 This creates documentation in the `docs/` directory that matches the format used in the Terraform Registry.
 
+You can use this tool to preview a document file before releasing it https://registry.terraform.io/tools/doc-preview
+
 ## Release Process
 
 Releases are automated via GitHub Actions when tags are pushed, you can also create a new release via the github UI by creating a release with a new tag that objects the [Semantic Versioning](https://semver.org/) format, for example: `v1.2.3`. 
