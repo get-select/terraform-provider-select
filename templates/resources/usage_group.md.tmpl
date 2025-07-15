@@ -5,7 +5,7 @@
 
 ## About 
 
-Usage Groups provide a flexible way of creating cost categories within SELECT. To learn more about usage groups, see the [SELECT documentation](https://select.dev/docs/reference/using-select/usage-groups).
+Usage Groups provide a flexible way to create cost categories within SELECT. Learn more in the [SELECT documentation](https://select.dev/docs/reference/using-select/usage-groups).
 
 ## Example Usage
 
@@ -13,7 +13,7 @@ Usage Groups provide a flexible way of creating cost categories within SELECT. T
 
 {{ tffile .ExampleFile }}
 
-### Advanced Filter Expression Examples
+### Advanced Filter Examples
 
 #### Filter by Role and Warehouse
 ```hcl
@@ -41,7 +41,7 @@ resource "select_usage_group" "analytics_team" {
 }
 ```
 
-#### Filter by User or Database Tag
+#### Filter by User or Warehouse
 ```hcl
 resource "select_usage_group" "finance_users" {
   name               = "Finance Department"
@@ -55,57 +55,92 @@ resource "select_usage_group" "finance_users" {
       {
         field = "user_name"
         operator = "in"
-        values = [
-          "USER_NAME"
-        ]
+        values = ["USER_NAME"]
       },
       {
-        field = "database_tags"
-        operator = "array_contains"
-        values = [
-          "ORG_TEAM: finance"
-        ]
+        field = "warehouse_name"
+        operator = "in"
+        values = ["WAREHOUSE_NAME_LARGE", "WAREHOUSE_NAME_SMALL"]
       }
     ]
   })
 }
 ```
 
-### Usage Group Collecting Several Warehouses
+### Usage Group Based on Snowflake Tags
 
-Consider that you may have used the snowflake provider to create several related warehouses, and you want to collect them all into a single usage group.
-
-```hcl
-resource "snowflake_warehouse" "analytics_wh_xsmall" {
-  name = "ANALYTICS_WH_XSMALL"
-  warehouse_size = "XSMALL"
-}
-
-resource "snowflake_warehouse" "analytics_wh_large" {
-  name = "ANALYTICS_WH_LARGE"
-  warehouse_size = "LARGE"
-}
-```
-
-Now we can create a usage group that collects all of the warehouses into a single usage group.
+Create usage groups based on Snowflake tags for better organization:
 
 ```hcl
-resource "select_usage_group" "analytics_team" {
-  name               = "Analytics Team"
+resource "snowflake_tag" "analytics_tag" {
+  name     = "Analytics Team Tag"
+  database = "database"
+  schema   = "schema"
+}
+
+resource "snowflake_tag_association" "user_tag_assignment" {
+  object_identifier {
+    name = "ANALYST_USER"
+  }
+  object_type = "USER"
+  tag_id      = snowflake_tag.analytics_tag.fully_qualified_name
+  tag_value   = "analytics"
+}
+
+resource "select_usage_group" "analytics_users" {
+  name               = snowflake_tag.analytics_tag.name
   order              = 1
   budget             = 5000.0
   usage_group_set_id = select_usage_group_set.production.id
   
   filter_expression_json = jsonencode({
-    operator = "and"
+    operator = "or"
     filters = [
       {
-        field    = "warehouse_name" 
+        field    = "user_tags"
+        values   = [snowflake_tag.analytics_tag.name]
+        operator = "array_contains"
+      }
+    ]
+  })
+}
+```
+
+### Creating Multiple Usage Groups
+
+Use `for_each` to dynamically create usage groups for teams:
+
+```hcl
+locals {
+  teams = {
+    analytics = {
+      name   = "Analytics Team"
+      budget = 5000.0
+      users  = ["analyst_1", "data_scientist_1"]
+    }
+    finance = {
+      name   = "Finance Team"
+      budget = 3000.0
+      users  = ["finance_manager", "accountant_1"]
+    }
+  }
+}
+
+resource "select_usage_group" "team_groups" {
+  for_each = local.teams
+  
+  name               = each.value.name
+  order              = index(keys(local.teams), each.key) + 1
+  budget             = each.value.budget
+  usage_group_set_id = select_usage_group_set.production.id
+  
+  filter_expression_json = jsonencode({
+    operator = "or"
+    filters = [
+      {
+        field    = "user_name"
         operator = "in"
-        values   = [
-          snowflake_warehouse.analytics_wh_xsmall.name,
-          snowflake_warehouse.analytics_wh_large.name
-        ]
+        values   = each.value.users
       }
     ]
   })
@@ -116,9 +151,19 @@ resource "select_usage_group" "analytics_team" {
 
 ### Filter Expressions
 
-The `filter_expression_json` field accepts a JSON encoded object that will be validated when applied. There's a wide variety of fields that can be filtered on depending on the type of usage group (such as Snowflake account or organization owned). 
+The `filter_expression_json` field accepts a JSON-encoded object with filter criteria. Available fields vary by usage group type.
 
-To explore the fields that can be filtered on, or for complicated filter expressions containing multiple statements, we suggest using the SELECT UI to configure something close to the structure you need, and then switching to JSON mode and copying the expression into your terraform code, reformatting into a valid terraform block.
+**Tip**: Use the SELECT UI to configure complex filters, then switch to JSON mode and copy the expression into your Terraform configuration.
+
+#### Tag Filtering
+
+Different Snowflake tag types require specific filter fields in SELECT:
+- `user_tags` - for tags associated with users
+- `database_tags` - for tags associated with databases  
+- `warehouse_tags` - for tags associated with warehouses
+- `role_tags` - for tags associated with roles
+
+**Coming Soon**: An `object_tags` field will be added to filter across all tag associations simultaneously.
 
 ## Import
 
@@ -128,4 +173,4 @@ To explore the fields that can be filtered on, or for complicated filter express
 terraform import {{ .Name }}.example <usage_group_set_id>/<usage_group_id>
 ```
 
-The ID of an existing usage group can be obtained by switching to JSON mode in the SELECT UI and copying the ID from the JSON document. See the `select_usage_group_set` resource documentation to see how to obtain the usage group set id.
+To find the usage group ID, switch to JSON mode in the SELECT UI and copy the ID from the JSON document. See the `select_usage_group_set` resource documentation for obtaining the usage group set ID.
