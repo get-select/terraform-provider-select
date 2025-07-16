@@ -1,6 +1,6 @@
 # Terraform Provider Tests
 
-Integration tests for the Select Terraform provider using Terraform's built-in testing framework.
+Integration tests for the SELECT Terraform provider using Terraform's built-in testing framework.
 
 ## Setup
 

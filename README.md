@@ -1,12 +1,12 @@
-# Terraform Provider for Select - Development
+# Terraform Provider for SELECT - Development
 
-This repository contains the source code for the [Select Terraform Provider](https://registry.terraform.io/providers/get-select/select). This provider is _mostly_ **auto-generated** from Select's public OpenAPI specification, enabling developers to manage Select platform resources through Terraform.
+This repository contains the source code for the [SELECT Terraform Provider](https://registry.terraform.io/providers/get-select/select). This provider is _mostly_ **auto-generated** from SELECT's public OpenAPI specification, enabling developers to manage SELECT platform resources through Terraform.
 
 > **For usage documentation and examples**, visit the [official Terraform Registry documentation](https://registry.terraform.io/providers/get-select/select/latest/docs).
 
-## About Select
+## About SELECT
 
-[Select](https://select.dev) helps organizations optimize their Snowflake usage and costs. This Terraform provider enables Infrastructure as Code management of Select platform resources like usage groups and usage group sets.
+[SELECT](https://select.dev) helps organizations optimize their Snowflake usage and costs. This Terraform provider enables Infrastructure as Code management of SELECT platform resources like usage groups and usage group sets.
 
 ## Architecture Overview
 
@@ -14,18 +14,18 @@ This provider is built using:
 - **[Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)** - Modern Terraform provider development
 - **[tfplugingen-openapi](https://github.com/hashicorp/terraform-plugin-codegen-openapi)** - OpenAPI to Terraform schema generation  
 - **[tfplugingen-framework](https://github.com/hashicorp/terraform-plugin-codegen-framework)** - Framework code generation
-- **Select's Public OpenAPI Spec** - Single source of truth hosted at `https://api.select.dev/public_openapi`
+- **SELECT's Public OpenAPI Spec** - Single source of truth hosted at `https://api.select.dev/public_openapi`
 
 ### Code Generation Workflow
 
-The provider code is generated from Select's public OpenAPI specification:
+The provider code is generated from SELECT's public OpenAPI specification:
 
 1. **Fetch OpenAPI Spec**: Downloads the latest spec from `https://api.select.dev/public_openapi`
 2. **Generate Schema**: `tfplugingen-openapi` converts OpenAPI spec to Terraform schema definitions
 3. **Generate Code**: `tfplugingen-framework` creates the final provider code
 4. **Manual Customization**: Configuration in `generator_config.yml` allows for customizations and overrides
 
-This ensures the provider stays in sync with Select's API automatically.
+This ensures the provider stays in sync with SELECT's API automatically.
 
 ## Development Requirements
 
@@ -131,7 +131,7 @@ terraform-provider-select/
 
 ## OpenAPI Dependency
 
-**Important**: This provider is entirely dependent on Select's public OpenAPI specification. The specification is:
+**Important**: This provider is entirely dependent on SELECT's public OpenAPI specification. The specification is:
 
 - **Hosted at**: `https://api.select.dev/public_openapi`
 - **Auto-fetched**: Every `make codegen` downloads the latest spec
@@ -141,7 +141,7 @@ If the OpenAPI endpoint is unavailable, the code generation will fail. For offli
 
 ## Testing
 
-The provider includes comprehensive tests that validate functionality against the live Select API:
+The provider includes comprehensive tests that validate functionality against the live SELECT API:
 
 ```bash
 # Run all tests
@@ -154,7 +154,7 @@ cd tests && terraform test provider.tftest.hcl
 cd tests && terraform test provider.tftest.hcl -filter=create_usage_group_set
 ```
 
-**Note**: Tests require valid Select API credentials and will create/modify real resources.
+**Note**: Tests require valid SELECT API credentials and will create/modify real resources.
 
 ## Documentation Generation
 
@@ -224,7 +224,7 @@ make test-clean && make test
 ## Links
 
 - **[Terraform Registry](https://registry.terraform.io/providers/get-select/select/latest)** - Official provider documentation and usage examples
-- **[Select Platform](https://select.dev)** - Select platform documentation
+- **[SELECT Platform](https://select.dev)** - SELECT platform documentation
 - **[Provider Issues](https://github.com/get-select/terraform-provider-select/issues)** - Report bugs or request features
 - **[Terraform Plugin Framework](https://developer.hashicorp.com/terraform/plugin/framework)** - Framework documentation
 

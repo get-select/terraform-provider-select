@@ -1,8 +1,8 @@
 <!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
 
-# Select Provider
+# SELECT Provider
 
-The Select provider is used to manage resources in the [SELECT](https://select.dev) Snowflake optimization and cost management platform.
+The SELECT provider is used to manage resources in the [SELECT](https://select.dev) Snowflake optimization and cost management platform.
 
 ## Example Usage
 
