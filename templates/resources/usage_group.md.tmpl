@@ -69,7 +69,7 @@ resource "select_usage_group" "finance_users" {
 
 ### Usage Group Based on Snowflake Tags
 
-Create usage groups based on Snowflake tags for better organization:
+Create usage groups based on Snowflake tags for better organization.
 
 ```hcl
 resource "snowflake_tag" "analytics_tag" {
@@ -98,7 +98,7 @@ resource "select_usage_group" "analytics_users" {
     filters = [
       {
         field    = "user_tags"
-        values   = [snowflake_tag.analytics_tag.name]
+        values   =  [`${snowflake_tag.analytics_tag.name}: ${snowflake_tag_association.user_tag_assignment.tag_value}`]
         operator = "array_contains"
       }
     ]
@@ -162,6 +162,9 @@ Different Snowflake tag types require specific filter fields in SELECT:
 - `database_tags` - for tags associated with databases  
 - `warehouse_tags` - for tags associated with warehouses
 - `role_tags` - for tags associated with roles
+
+The value to filter user_tags is of the format
+`TAG_NAME: TAG_VALUE`
 
 **Coming Soon**: An `object_tags` field will be added to filter across all tag associations simultaneously.
 
