@@ -46,3 +46,5 @@ Thumbs.db
 # terraformrc for local development
 .terraformrc
 .env.dev
+
+tmp.md
