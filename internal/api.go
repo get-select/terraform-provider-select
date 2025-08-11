@@ -30,7 +30,13 @@ type HTTPClient struct {
 func NewHTTPClient(apiKey, organizationId, baseURL string) *HTTPClient {
 	return &HTTPClient{
 		client: &http.Client{
-			Timeout: 30 * time.Second, // 30 second timeout is reasonable for most API calls
+			Transport: &http.Transport{
+				MaxConnsPerHost:     12,  // Allow 12 concurrent connections per host (slightly above Terraform's default parallelism of 10)
+				MaxIdleConns:        100, // Maximum idle connections across all hosts
+				MaxIdleConnsPerHost: 12,  // Maximum idle connections per host
+				IdleConnTimeout:     90 * time.Second,
+			},
+			Timeout: 90 * time.Second,
 		},
 		baseURL:        baseURL,
 		apiKey:         apiKey,
