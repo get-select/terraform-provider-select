@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -353,6 +354,14 @@ func updateTerraformFromAPI(dst interface{}, src map[string]interface{}) {
 // APIClient provides high-level methods for common API operations
 type APIClient struct {
 	httpClient *HTTPClient
+	// versionID stores the version ID for the current apply operation
+	// This ensures all resources in the same apply use the same version
+	versionID string
+	// versionOnce ensures version creation happens exactly once per apply
+	// sync.Once provides all necessary synchronization guarantees
+	versionOnce sync.Once
+	// versionError stores any error from version creation
+	versionError error
 }
 
 // NewAPIClient creates a new API client with the shared HTTP client
@@ -449,4 +458,66 @@ func (c *APIClient) Delete(ctx context.Context, endpoint string) diag.Diagnostic
 // GetOrganizationId returns the organization ID configured for this client
 func (c *APIClient) GetOrganizationId() string {
 	return c.httpClient.organizationId
+}
+
+// GetOrCreateVersion creates a new version for the usage group set if one hasn't been created yet
+// for the current apply operation. Returns the version ID.
+// This uses sync.Once to ensure thread-safe creation even with concurrent resource operations.
+func (c *APIClient) GetOrCreateVersion(ctx context.Context, usageGroupSetId string) (string, diag.Diagnostics) {
+	// sync.Once ensures this runs exactly once, even with concurrent calls
+	// It also provides memory synchronization guarantees for the results
+	c.versionOnce.Do(func() {
+		// Create a new version
+		orgId := c.GetOrganizationId()
+		endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/versions", orgId, usageGroupSetId)
+		
+		// Create request body with metadata about the terraform apply
+		versionRequest := map[string]interface{}{
+			"source": "terraform",
+			"timestamp": time.Now().UTC().Format(time.RFC3339),
+		}
+		
+		var versionResponse map[string]interface{}
+		creationDiags := c.Post(ctx, endpoint, versionRequest, &versionResponse)
+		
+		if creationDiags.HasError() {
+			// No mutex needed - sync.Once provides synchronization
+			c.versionError = fmt.Errorf("failed to create version: %v", creationDiags)
+			return
+		}
+		
+		// Extract version ID from response
+		versionID, ok := versionResponse["id"].(string)
+		if !ok {
+			c.versionError = fmt.Errorf("failed to extract version ID from API response")
+			return
+		}
+		
+		// Store the version ID for this apply
+		// No mutex needed - sync.Once provides synchronization
+		c.versionID = versionID
+	})
+	
+	// After sync.Once.Do() returns, all values are safely readable
+	// without additional synchronization due to happens-before guarantee
+	if c.versionError != nil {
+		return "", diag.Diagnostics{
+			diag.NewErrorDiagnostic(
+				"Version Creation Error",
+				c.versionError.Error(),
+			),
+		}
+	}
+	
+	return c.versionID, diag.Diagnostics{}
+}
+
+// ResetVersion clears the stored version information
+// Note: Terraform typically doesn't reuse provider instances between applies,
+// so this may not be necessary in practice
+func (c *APIClient) ResetVersion() {
+	c.versionID = ""
+	c.versionError = nil
+	// Reset sync.Once by creating a new instance
+	c.versionOnce = sync.Once{}
 }

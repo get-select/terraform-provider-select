@@ -164,6 +164,13 @@ func createUsageGroup(ctx context.Context, model *resource_usage_group.UsageGrou
 	orgId := client.GetOrganizationId()
 	usageGroupSetId := model.UsageGroupSetId.ValueString()
 
+	// Create or get the version for this apply operation
+	// This ensures all resources in the same apply use the same version
+	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
+	if versionDiags.HasError() {
+		return versionDiags
+	}
+
 	if usageGroupSetId == "" {
 		return diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -244,6 +251,13 @@ func updateUsageGroup(ctx context.Context, model *resource_usage_group.UsageGrou
 	// Get organization_id from the client (configured at provider level)
 	orgId := client.GetOrganizationId()
 	usageGroupSetId := model.UsageGroupSetId.ValueString()
+
+	// Create or get the version for this apply operation
+	// This ensures all resources in the same apply use the same version
+	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
+	if versionDiags.HasError() {
+		return versionDiags
+	}
 	usageGroupId := model.Id.ValueString()
 
 	if usageGroupSetId == "" {
@@ -278,10 +292,10 @@ func updateUsageGroup(ctx context.Context, model *resource_usage_group.UsageGrou
 	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups/%s", orgId, usageGroupSetId, usageGroupId)
 	diags := client.Put(ctx, endpoint, &requestModel, model)
 
-	// After successful update, ensure organization_id and usage_group_set_id are set in the response model
+	// After successful update, ensure organization_id is set in the response model
 	if !diags.HasError() {
 		model.OrganizationId = types.StringValue(orgId)
-		model.UsageGroupSetId = model.UsageGroupSetId // Keep the original value
+		// UsageGroupSetId is already set in the model, no need to reassign
 	}
 
 	return diags
@@ -294,6 +308,13 @@ func deleteUsageGroup(ctx context.Context, model *resource_usage_group.UsageGrou
 	orgId := client.GetOrganizationId()
 	usageGroupSetId := model.UsageGroupSetId.ValueString()
 	usageGroupId := model.Id.ValueString()
+
+	// Create or get the version for this apply operation
+	// This ensures even destroy operations create a version
+	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
+	if versionDiags.HasError() {
+		return versionDiags
+	}
 
 	if usageGroupSetId == "" {
 		return diag.Diagnostics{

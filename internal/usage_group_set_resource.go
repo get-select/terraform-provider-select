@@ -139,6 +139,9 @@ func (r *usageGroupSetResource) ImportState(ctx context.Context, req resource.Im
 func createUsageGroupSet(ctx context.Context, model *resource_usage_group_set.UsageGroupSetModel, client *APIClient) diag.Diagnostics {
 	// Get organization_id from the client (configured at provider level)
 	orgId := client.GetOrganizationId()
+	
+	// Note: Version creation happens at the usage group level
+	// The usage group set just provides the container
 
 	// Create a copy of the model without organization_id for the request body
 	// (organization_id goes in the URL path only, not the JSON payload)
@@ -196,6 +199,13 @@ func updateUsageGroupSet(ctx context.Context, model *resource_usage_group_set.Us
 	// Get organization_id from the client (configured at provider level)
 	orgId := client.GetOrganizationId()
 	usageGroupSetId := model.Id.ValueString()
+	
+	// Create or get the version for this apply operation
+	// This ensures all resources in the same apply use the same version
+	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
+	if versionDiags.HasError() {
+		return versionDiags
+	}
 
 	if usageGroupSetId == "" {
 		return diag.Diagnostics{
