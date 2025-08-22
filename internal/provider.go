@@ -14,14 +14,12 @@ import (
 
 var _ provider.Provider = (*selectProvider)(nil)
 
-// ProviderModel describes the provider data model.
 type ProviderModel struct {
 	ApiKey         types.String `tfsdk:"api_key"`
 	OrganizationId types.String `tfsdk:"organization_id"`
 	ApiURL         types.String `tfsdk:"select_api_url"`
 }
 
-// ProviderData contains the configured API client for use by resources and data sources
 type ProviderData struct {
 	Client *APIClient
 }
@@ -62,7 +60,6 @@ func (p *selectProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		return
 	}
 
-	// Validate that api_key is provided
 	if config.ApiKey.IsNull() || config.ApiKey.IsUnknown() {
 		resp.Diagnostics.AddError(
 			"Missing API Key",
@@ -80,7 +77,6 @@ func (p *selectProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		return
 	}
 
-	// Validate that organization_id is provided
 	if config.OrganizationId.IsNull() || config.OrganizationId.IsUnknown() {
 		resp.Diagnostics.AddError(
 			"Missing Organization ID",
@@ -103,10 +99,8 @@ func (p *selectProvider) Configure(ctx context.Context, req provider.ConfigureRe
 		apiURL = "https://api.select.dev"
 	}
 
-	// Create the API client with both API key and organization ID
 	client := NewAPIClient(apiKey, organizationId, apiURL)
 
-	// Store the client in ProviderData so resources can access it
 	providerData := &ProviderData{
 		Client: client,
 	}

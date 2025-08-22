@@ -27,7 +27,6 @@ type usageGroupResource struct {
 }
 
 func (r *usageGroupResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
@@ -49,7 +48,6 @@ func (r *usageGroupResource) Metadata(ctx context.Context, req resource.Metadata
 }
 
 func (r *usageGroupResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	// Use the code-generated schema as base and override usage_group_set_id to be required
 	baseSchema := resource_usage_group.UsageGroupResourceSchema(ctx)
 
 	resp.Schema = baseSchema
@@ -91,30 +89,27 @@ func (r *usageGroupResource) Update(ctx context.Context, req resource.UpdateRequ
 	var plan resource_usage_group.UsageGroupModel
 	var state resource_usage_group.UsageGroupModel
 
-	// Get the planned changes
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Get the current state (which contains the ID)
 	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Create the update model by merging plan with state ID and computed fields
 	updateModel := resource_usage_group.UsageGroupModel{
-		Id:                   state.Id,                  // ID from current state
-		Name:                 plan.Name,                 // Updated name from plan
-		Order:                plan.Order,                // Updated order from plan
-		Budget:               plan.Budget,               // Updated budget from plan
-		FilterExpressionJson: plan.FilterExpressionJson, // Updated filter expression from plan
-		OrganizationId:       state.OrganizationId,      // Keep from state
-		UsageGroupSetId:      state.UsageGroupSetId,     // Keep from state
-		UsageGroupSetName:    state.UsageGroupSetName,   // Keep from state
-		CreatedAt:            state.CreatedAt,           // Keep from state
-		UpdatedAt:            state.UpdatedAt,           // Keep from state
+		Id:                   state.Id,
+		Name:                 plan.Name,
+		Order:                plan.Order,
+		Budget:               plan.Budget,
+		FilterExpressionJson: plan.FilterExpressionJson,
+		OrganizationId:       state.OrganizationId,
+		UsageGroupSetId:      state.UsageGroupSetId,
+		UsageGroupSetName:    state.UsageGroupSetName,
+		CreatedAt:            state.CreatedAt,
+		UpdatedAt:            state.UpdatedAt,
 	}
 
 	resp.Diagnostics.Append(updateUsageGroup(ctx, &updateModel, r.client)...)
@@ -137,7 +132,6 @@ func (r *usageGroupResource) Delete(ctx context.Context, req resource.DeleteRequ
 }
 
 func (r *usageGroupResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	// Parse the import ID as "usage_group_set_id/usage_group_id"
 	importID := req.ID
 	parts := strings.Split(importID, "/")
 
@@ -152,17 +146,18 @@ func (r *usageGroupResource) ImportState(ctx context.Context, req resource.Impor
 	usageGroupSetID := parts[0]
 	usageGroupID := parts[1]
 
-	// Set both IDs in the state
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("usage_group_set_id"), usageGroupSetID)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), usageGroupID)...)
 }
 
-// createUsageGroup handles the creation of a new usage group
-// Uses the API route: POST /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups
 func createUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupModel, client *APIClient) diag.Diagnostics {
-	// Get organization_id from the client (configured at provider level)
 	orgId := client.GetOrganizationId()
 	usageGroupSetId := model.UsageGroupSetId.ValueString()
+
+	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
+	if versionDiags.HasError() {
+		return versionDiags
+	}
 
 	if usageGroupSetId == "" {
 		return diag.Diagnostics{
@@ -173,22 +168,17 @@ func createUsageGroup(ctx context.Context, model *resource_usage_group.UsageGrou
 		}
 	}
 
-	// Create a copy of the model without computed fields for the request body
 	requestModel := resource_usage_group.UsageGroupModel{
 		Name:                 model.Name,
 		Order:                model.Order,
 		Budget:               model.Budget,
 		FilterExpressionJson: model.FilterExpressionJson,
 		UsageGroupSetId:      model.UsageGroupSetId,
-		// Explicitly exclude: Id (computed), OrganizationId (URL path),
-		// CreatedAt, UpdatedAt, UsageGroupSetName (all computed)
 	}
 
-	// Use the API route: POST /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups
 	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups", orgId, usageGroupSetId)
 	diags := client.Post(ctx, endpoint, &requestModel, model)
 
-	// After successful creation, ensure organization_id and usage_group_set_id are set in the response model
 	if !diags.HasError() {
 		model.OrganizationId = types.StringValue(orgId)
 		// After successful creation, ensure organization_id is set in the response model
@@ -200,10 +190,7 @@ func createUsageGroup(ctx context.Context, model *resource_usage_group.UsageGrou
 	return diags
 }
 
-// readUsageGroup handles reading an existing usage group from the API
-// Uses the API route: GET /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
 func readUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupModel, client *APIClient) diag.Diagnostics {
-	// Get organization_id from the client (configured at provider level)
 	orgId := client.GetOrganizationId()
 	usageGroupSetId := model.UsageGroupSetId.ValueString()
 	usageGroupId := model.Id.ValueString()
@@ -226,11 +213,9 @@ func readUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupM
 		}
 	}
 
-	// Use the API route: GET /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
 	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups/%s", orgId, usageGroupSetId, usageGroupId)
 	diags := client.Get(ctx, endpoint, model)
 
-	// After successful read, ensure organization_id is set in the response model
 	if !diags.HasError() {
 		model.OrganizationId = types.StringValue(orgId)
 	}
@@ -238,12 +223,14 @@ func readUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupM
 	return diags
 }
 
-// updateUsageGroup handles the update of an existing usage group
-// Uses the API route: PUT /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
 func updateUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupModel, client *APIClient) diag.Diagnostics {
-	// Get organization_id from the client (configured at provider level)
 	orgId := client.GetOrganizationId()
 	usageGroupSetId := model.UsageGroupSetId.ValueString()
+
+	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
+	if versionDiags.HasError() {
+		return versionDiags
+	}
 	usageGroupId := model.Id.ValueString()
 
 	if usageGroupSetId == "" {
@@ -264,36 +251,33 @@ func updateUsageGroup(ctx context.Context, model *resource_usage_group.UsageGrou
 		}
 	}
 
-	// Create a copy of the model with only fields allowed for updates
 	requestModel := resource_usage_group.UsageGroupModel{
 		Id:                   model.Id,
 		Name:                 model.Name,
 		Order:                model.Order,
 		Budget:               model.Budget,
 		FilterExpressionJson: model.FilterExpressionJson,
-		// Exclude: OrganizationId, UsageGroupSetId (URL path), CreatedAt, UpdatedAt, UsageGroupSetName (computed)
 	}
 
-	// Use the API route: PUT /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
 	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups/%s", orgId, usageGroupSetId, usageGroupId)
 	diags := client.Put(ctx, endpoint, &requestModel, model)
 
-	// After successful update, ensure organization_id and usage_group_set_id are set in the response model
 	if !diags.HasError() {
 		model.OrganizationId = types.StringValue(orgId)
-		model.UsageGroupSetId = model.UsageGroupSetId // Keep the original value
 	}
 
 	return diags
 }
 
-// deleteUsageGroup handles the deletion of a usage group
-// Uses the API route: DELETE /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
 func deleteUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupModel, client *APIClient) diag.Diagnostics {
-	// Get organization_id from the client (configured at provider level)
 	orgId := client.GetOrganizationId()
 	usageGroupSetId := model.UsageGroupSetId.ValueString()
 	usageGroupId := model.Id.ValueString()
+
+	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
+	if versionDiags.HasError() {
+		return versionDiags
+	}
 
 	if usageGroupSetId == "" {
 		return diag.Diagnostics{
@@ -313,7 +297,6 @@ func deleteUsageGroup(ctx context.Context, model *resource_usage_group.UsageGrou
 		}
 	}
 
-	// Use the API route: DELETE /api/{organization_id}/usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
 	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups/%s", orgId, usageGroupSetId, usageGroupId)
 	return client.Delete(ctx, endpoint)
 }
