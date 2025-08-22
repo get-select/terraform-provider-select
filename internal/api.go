@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"net/http"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -351,6 +352,14 @@ func updateTerraformFromAPI(dst interface{}, src map[string]interface{}) {
 	}
 }
 
+// VersionResponse represents the API response when creating a version
+type VersionResponse struct {
+	Id               string `json:"id"`
+	CreatedAt        string `json:"created_at"`
+	CreatedBy        string `json:"created_by"`
+	UsageGroupSetId  string `json:"usage_group_set_id"`
+}
+
 // APIClient provides high-level methods for common API operations
 type APIClient struct {
 	httpClient *HTTPClient
@@ -408,14 +417,39 @@ func (c *APIClient) doJSONRequest(ctx context.Context, method, endpoint string, 
 	case http.StatusOK, http.StatusCreated:
 		// Success - parse response if responseBody is provided
 		if responseBody != nil && len(bodyStr) > 0 {
-			// Unmarshal to a map first to handle the conversion
-			var apiResponse map[string]interface{}
-			if err := json.Unmarshal([]byte(bodyStr), &apiResponse); err != nil {
-				return handleJSONError("unmarshal response", err)
+			// Check if responseBody is a regular struct (not containing Terraform types)
+			responseValue := reflect.ValueOf(responseBody)
+			if responseValue.Kind() == reflect.Ptr && responseValue.Elem().Kind() == reflect.Struct {
+				responseType := responseValue.Elem().Type()
+				// Check if it's a regular struct (like VersionResponse) by checking for json tags
+				// and absence of Terraform framework types
+				isRegularStruct := false
+				for i := 0; i < responseType.NumField(); i++ {
+					field := responseType.Field(i)
+					if _, hasJSON := field.Tag.Lookup("json"); hasJSON {
+						// Check if field is a basic Go type (not Terraform framework type)
+						if field.Type.PkgPath() == "" || !strings.Contains(field.Type.String(), "types.") {
+							isRegularStruct = true
+							break
+						}
+					}
+				}
+				
+				if isRegularStruct {
+					// For regular struct types, unmarshal directly
+					if err := json.Unmarshal([]byte(bodyStr), responseBody); err != nil {
+						return handleJSONError("unmarshal response", err)
+					}
+				} else {
+					// For Terraform models, unmarshal to map first
+					var apiResponse map[string]interface{}
+					if err := json.Unmarshal([]byte(bodyStr), &apiResponse); err != nil {
+						return handleJSONError("unmarshal response", err)
+					}
+					// Update the Terraform model from the API response
+					updateTerraformFromAPI(responseBody, apiResponse)
+				}
 			}
-
-			// Update the Terraform model from the API response
-			updateTerraformFromAPI(responseBody, apiResponse)
 		}
 		return nil
 
@@ -470,36 +504,27 @@ func (c *APIClient) GetOrCreateVersion(ctx context.Context, usageGroupSetId stri
 		// Create a new version
 		orgId := c.GetOrganizationId()
 		endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/versions", orgId, usageGroupSetId)
-		
-		// Create request body with metadata about the terraform apply
-		versionRequest := map[string]interface{}{
-			"source": "terraform",
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
-		}
-		
-		var versionResponse map[string]interface{}
+
+		// Create request body (empty for now, can be extended later)
+		versionRequest := map[string]interface{}{}
+
+		var versionResponse VersionResponse
 		creationDiags := c.Post(ctx, endpoint, versionRequest, &versionResponse)
-		
+
 		if creationDiags.HasError() {
-			// No mutex needed - sync.Once provides synchronization
 			c.versionError = fmt.Errorf("failed to create version: %v", creationDiags)
 			return
 		}
 		
-		// Extract version ID from response
-		versionID, ok := versionResponse["id"].(string)
-		if !ok {
-			c.versionError = fmt.Errorf("failed to extract version ID from API response")
+		// Validate we got a version ID
+		if versionResponse.Id == "" {
+			c.versionError = fmt.Errorf("API returned empty version ID")
 			return
 		}
-		
-		// Store the version ID for this apply
-		// No mutex needed - sync.Once provides synchronization
-		c.versionID = versionID
+
+		c.versionID = versionResponse.Id
 	})
-	
-	// After sync.Once.Do() returns, all values are safely readable
-	// without additional synchronization due to happens-before guarantee
+
 	if c.versionError != nil {
 		return "", diag.Diagnostics{
 			diag.NewErrorDiagnostic(
@@ -508,16 +533,6 @@ func (c *APIClient) GetOrCreateVersion(ctx context.Context, usageGroupSetId stri
 			),
 		}
 	}
-	
-	return c.versionID, diag.Diagnostics{}
-}
 
-// ResetVersion clears the stored version information
-// Note: Terraform typically doesn't reuse provider instances between applies,
-// so this may not be necessary in practice
-func (c *APIClient) ResetVersion() {
-	c.versionID = ""
-	c.versionError = nil
-	// Reset sync.Once by creating a new instance
-	c.versionOnce = sync.Once{}
+	return c.versionID, diag.Diagnostics{}
 }

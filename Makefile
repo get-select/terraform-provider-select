@@ -55,6 +55,7 @@ setup-dev-overrides:
 	@echo "Dev overrides configured in ~/.terraform.d/.terraformrc"
 	cat ~/.terraform.d/.terraformrc
 	cp ~/.terraform.d/.terraformrc ./.terraformrc
+	cp ~/.terraform.d/.terraformrc ~/.terraformrc
 
 
 # Testing targets
