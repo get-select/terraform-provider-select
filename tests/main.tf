@@ -47,6 +47,12 @@ variable "test_snowflake_org_name" {
   default     = "test-snowflake-org"
 }
 
+variable "test_team_id" {
+  description = "Test team UUID"
+  type        = string
+  default     = "01fee6c9-d575-43e1-95d1-16de9e8bed18"
+}
+
 variable "usage_group_name" {
   description = "Name for the usage group"
   type        = string
@@ -91,6 +97,20 @@ resource "select_usage_group_set" "test_account" {
   name                   = var.usage_group_set_name
   order                  = var.usage_group_set_order
   snowflake_account_uuid = var.test_snowflake_account_uuid
+}
+
+# Usage group set with team scope
+resource "select_usage_group_set" "test_team" {
+  name    = "${var.usage_group_set_name}-team"
+  order   = 2
+  team_id = var.test_team_id
+}
+
+# Usage group set with SELECT organization scope (no scope fields)
+resource "select_usage_group_set" "test_select_org" {
+  name  = "${var.usage_group_set_name}-select-org"
+  order = 3
+  # No scope fields = SELECT organization scope
 }
 
 # Basic usage group
@@ -143,4 +163,12 @@ output "usage_group_with_budget_id" {
 
 output "usage_group_complex_filter_id" {
   value = select_usage_group.test_complex_filter.id
+}
+
+output "team_usage_group_set_id" {
+  value = select_usage_group_set.test_team.id
+}
+
+output "select_org_usage_group_set_id" {
+  value = select_usage_group_set.test_select_org.id
 }
