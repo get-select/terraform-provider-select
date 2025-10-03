@@ -97,12 +97,12 @@ func (r *usageGroupSetResource) Update(ctx context.Context, req resource.UpdateR
 	}
 
 	updateModel := resource_usage_group_set.UsageGroupSetModel{
-		Id:                        state.Id,
-		Name:                      plan.Name,
-		Order:                     plan.Order,
-		OrganizationId:            state.OrganizationId,
-		SnowflakeAccountUuid:      plan.SnowflakeAccountUuid,
-		SnowflakeOrganizationName: plan.SnowflakeOrganizationName,
+		Id:             state.Id,
+		Name:           plan.Name,
+		Order:          plan.Order,
+		OrganizationId: state.OrganizationId,
+		// Scope fields (SnowflakeAccountUuid, SnowflakeOrganizationName, TeamId) are immutable
+		// per the API spec and cannot be changed after creation
 	}
 
 	resp.Diagnostics.Append(updateUsageGroupSet(ctx, &updateModel, r.client)...)
@@ -136,6 +136,7 @@ func createUsageGroupSet(ctx context.Context, model *resource_usage_group_set.Us
 		Order:                     model.Order,
 		SnowflakeAccountUuid:      model.SnowflakeAccountUuid,
 		SnowflakeOrganizationName: model.SnowflakeOrganizationName,
+		TeamId:                    model.TeamId,
 	}
 
 	endpoint := fmt.Sprintf("/api/%s/usage-group-sets", orgId)

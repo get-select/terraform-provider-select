@@ -8,6 +8,7 @@ variables {
   # TF_VAR_select_api_key
   # TF_VAR_select_organization_id
   test_snowflake_account_uuid = "scwxhob-ad38017"
+  test_team_id                = "01fee6c9-d575-43e1-95d1-16de9e8bed18"
   usage_group_set_name        = "terraform-test-set"
   usage_group_set_order       = 1
   usage_group_name            = "terraform-test-group"
@@ -37,6 +38,56 @@ run "create_usage_group_set" {
   assert {
     condition     = select_usage_group_set.test_account.id != null
     error_message = "Usage group set ID should be set after creation"
+  }
+}
+
+# Test 1b: Team-scoped usage group set creation
+run "create_team_scoped_usage_group_set" {
+  command = apply
+
+  assert {
+    condition     = select_usage_group_set.test_team.name == "${var.usage_group_set_name}-team"
+    error_message = "Team-scoped usage group set name should match expected value"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_team.team_id == var.test_team_id
+    error_message = "Team ID should match expected value"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_team.snowflake_account_uuid == null
+    error_message = "Snowflake account UUID should be null for team-scoped set"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_team.id != null
+    error_message = "Team-scoped usage group set ID should be set after creation"
+  }
+}
+
+# Test 1c: SELECT organization-scoped usage group set creation
+run "create_select_org_scoped_usage_group_set" {
+  command = apply
+
+  assert {
+    condition     = select_usage_group_set.test_select_org.name == "${var.usage_group_set_name}-select-org"
+    error_message = "SELECT org-scoped usage group set name should match expected value"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_select_org.team_id == null
+    error_message = "Team ID should be null for SELECT org-scoped set"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_select_org.snowflake_account_uuid == null
+    error_message = "Snowflake account UUID should be null for SELECT org-scoped set"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_select_org.id != null
+    error_message = "SELECT org-scoped usage group set ID should be set after creation"
   }
 }
 
