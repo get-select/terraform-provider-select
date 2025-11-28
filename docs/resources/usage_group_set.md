@@ -10,9 +10,8 @@ Usage Group sets are a way to group usage groups together, to learn more about u
 
 ```terraform
 resource "select_usage_group_set" "production" {
-  name                   = "Production Workloads"
-  order                  = 1
-  snowflake_account_uuid = "12345678-1234-1234-1234-123456789012"
+  name  = "Production Workloads"
+  order = 1
 }
 ```
 
@@ -27,8 +26,7 @@ resource "select_usage_group_set" "production" {
 ### Optional
 
 - `organization_id` (String)
-- `snowflake_account_uuid` (String)
-- `snowflake_organization_name` (String)
+- `team_id` (String)
 
 ### Read-Only
 
