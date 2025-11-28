@@ -7,8 +7,7 @@ variables {
   # and must correlate to an APIKey in the Db of whatever instance you're testing against
   # TF_VAR_select_api_key
   # TF_VAR_select_organization_id
-  test_snowflake_account_uuid = "scwxhob-ad38017"
-  test_team_id                = "01fee6c9-d575-43e1-95d1-16de9e8bed18"
+  test_team_id = "2f0899e2-2746-4300-887c-524e64b5a138"
   usage_group_set_name        = "terraform-test-set"
   usage_group_set_order       = 1
   usage_group_name            = "terraform-test-group"
@@ -21,22 +20,17 @@ run "create_usage_group_set" {
   command = apply
 
   assert {
-    condition     = select_usage_group_set.test_account.name == var.usage_group_set_name
+    condition     = select_usage_group_set.test_org.name == var.usage_group_set_name
     error_message = "Usage group set name should match expected value"
   }
 
   assert {
-    condition     = select_usage_group_set.test_account.order == var.usage_group_set_order
+    condition     = select_usage_group_set.test_org.order == var.usage_group_set_order
     error_message = "Usage group set order should match expected value"
   }
 
   assert {
-    condition     = select_usage_group_set.test_account.snowflake_account_uuid == var.test_snowflake_account_uuid
-    error_message = "Snowflake account UUID should match expected value"
-  }
-
-  assert {
-    condition     = select_usage_group_set.test_account.id != null
+    condition     = select_usage_group_set.test_org.id != null
     error_message = "Usage group set ID should be set after creation"
   }
 }
@@ -53,11 +47,6 @@ run "create_team_scoped_usage_group_set" {
   assert {
     condition     = select_usage_group_set.test_team.team_id == var.test_team_id
     error_message = "Team ID should match expected value"
-  }
-
-  assert {
-    condition     = select_usage_group_set.test_team.snowflake_account_uuid == null
-    error_message = "Snowflake account UUID should be null for team-scoped set"
   }
 
   assert {
@@ -81,11 +70,6 @@ run "create_select_org_scoped_usage_group_set" {
   }
 
   assert {
-    condition     = select_usage_group_set.test_select_org.snowflake_account_uuid == null
-    error_message = "Snowflake account UUID should be null for SELECT org-scoped set"
-  }
-
-  assert {
     condition     = select_usage_group_set.test_select_org.id != null
     error_message = "SELECT org-scoped usage group set ID should be set after creation"
   }
@@ -106,7 +90,7 @@ run "create_usage_groups" {
   }
 
   assert {
-    condition     = select_usage_group.test_basic.usage_group_set_id == select_usage_group_set.test_account.id
+    condition     = select_usage_group.test_basic.usage_group_set_id == select_usage_group_set.test_org.id
     error_message = "Usage group should belong to the correct usage group set"
   }
 
@@ -136,7 +120,7 @@ run "verify_usage_group_with_budget" {
   }
 
   assert {
-    condition     = select_usage_group.test_with_budget.usage_group_set_id == select_usage_group_set.test_account.id
+    condition     = select_usage_group.test_with_budget.usage_group_set_id == select_usage_group_set.test_org.id
     error_message = "Usage group with budget should belong to correct set"
   }
 }
@@ -202,18 +186,18 @@ run "update_usage_group_set" {
   }
 
   assert {
-    condition     = select_usage_group_set.test_account.name == "terraform-test-set-updated"
+    condition     = select_usage_group_set.test_org.name == "terraform-test-set-updated"
     error_message = "Usage group set name should be updated"
   }
 
   assert {
-    condition     = select_usage_group_set.test_account.order == 5
+    condition     = select_usage_group_set.test_org.order == 5
     error_message = "Usage group set order should be updated"
   }
 
   # Ensure ID stability during updates
   assert {
-    condition     = select_usage_group_set.test_account.id != null
+    condition     = select_usage_group_set.test_org.id != null
     error_message = "Usage group set ID should remain stable during updates"
   }
 }

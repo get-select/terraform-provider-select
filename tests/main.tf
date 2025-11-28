@@ -35,22 +35,10 @@ variable "usage_group_set_order" {
   default     = 1
 }
 
-variable "test_snowflake_account_uuid" {
-  description = "Test Snowflake account UUID"
-  type        = string
-  default     = "12345678-1234-1234-1234-123456789012"
-}
-
-variable "test_snowflake_org_name" {
-  description = "Test Snowflake organization name"
-  type        = string
-  default     = "test-snowflake-org"
-}
-
 variable "test_team_id" {
   description = "Test team UUID"
   type        = string
-  default     = "01fee6c9-d575-43e1-95d1-16de9e8bed18"
+  default     = "2f0899e2-2746-4300-887c-524e64b5a138"
 }
 
 variable "usage_group_name" {
@@ -92,11 +80,10 @@ provider "select" {
   select_api_url = "http://localhost:8000"
 }
 
-# Usage group set with Snowflake account
-resource "select_usage_group_set" "test_account" {
-  name                   = var.usage_group_set_name
-  order                  = var.usage_group_set_order
-  snowflake_account_uuid = var.test_snowflake_account_uuid
+# Usage group set with SELECT organization scope
+resource "select_usage_group_set" "test_org" {
+  name  = var.usage_group_set_name
+  order = var.usage_group_set_order
 }
 
 # Usage group set with team scope
@@ -118,7 +105,7 @@ resource "select_usage_group" "test_basic" {
   name                   = var.usage_group_name
   order                  = var.usage_group_order
   budget                 = var.usage_group_budget
-  usage_group_set_id     = select_usage_group_set.test_account.id
+  usage_group_set_id     = select_usage_group_set.test_org.id
   filter_expression_json = var.simple_filter_expression_json
 }
 
@@ -127,7 +114,7 @@ resource "select_usage_group" "test_with_budget" {
   name                   = "${var.usage_group_name}-with-budget"
   order                  = var.usage_group_order + 1
   budget                 = 100.0
-  usage_group_set_id     = select_usage_group_set.test_account.id
+  usage_group_set_id     = select_usage_group_set.test_org.id
   filter_expression_json = var.simple_filter_expression_json
 }
 
@@ -136,17 +123,17 @@ resource "select_usage_group" "test_complex_filter" {
   name                   = "${var.usage_group_name}-complex"
   order                  = var.usage_group_order + 2
   budget                 = null
-  usage_group_set_id     = select_usage_group_set.test_account.id
+  usage_group_set_id     = select_usage_group_set.test_org.id
   filter_expression_json = var.complex_filter_expression_json
 }
 
 # Outputs for verification
 output "usage_group_set_id" {
-  value = select_usage_group_set.test_account.id
+  value = select_usage_group_set.test_org.id
 }
 
 output "usage_group_set_name" {
-  value = select_usage_group_set.test_account.name
+  value = select_usage_group_set.test_org.name
 }
 
 output "basic_usage_group_id" {
