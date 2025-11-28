@@ -18,6 +18,9 @@ resources:
       path: /api/{organization_id}/usage-group-sets/{usage_group_set_id}
       method: DELETE
     schema:
+      ignores:
+        - snowflake_account_uuid
+        - snowflake_organization_name
       attributes:
         overrides:
           name:
