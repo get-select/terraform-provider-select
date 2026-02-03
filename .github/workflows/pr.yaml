@@ -1,4 +1,4 @@
-name: CI
+name: Pull Request
 
 on:
   pull_request:
@@ -61,10 +61,7 @@ jobs:
           echo "Running codegen to generate provider code from OpenAPI spec..."
           make codegen
 
-      - name: Run GoReleaser (Dry Run)
+      - name: Run GoReleaser (Build Only)
         uses: goreleaser/goreleaser-action@9c156ee8a17a598857849441385a2041ef570552 # v6.3.0
         with:
-          args: release --clean --snapshot --skip=publish
-        env:
-          # GitHub sets the GITHUB_TOKEN secret automatically.
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          args: build --clean --snapshot
