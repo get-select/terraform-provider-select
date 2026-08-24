@@ -1,0 +1,111 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# Snowflake account tests.
+#
+# These are separate from provider.tftest.hcl because creating an account makes
+# SELECT validate the configuration against Snowflake for real: the credentials
+# have to work, and the account is added to and removed from the target
+# organization. Run with `make test-snowflake` once the TF_VAR_snowflake_*
+# variables are set.
+#
+# The credential and field-combination rules are checked before anything reaches
+# the API and are covered by the Go tests in internal/, so they are not repeated
+# here. What only a live run can show is that the account round-trips: that the
+# API's own values land in state, and that an update is an update rather than a
+# replacement.
+
+variables {
+  enable_snowflake_account_tests = true
+}
+
+# The account is added with the identity SELECT resolved from Snowflake, and with
+# the ETag every subsequent write depends on.
+run "create_snowflake_account" {
+  command = apply
+
+  assert {
+    condition     = select_snowflake_account.test[0].id == var.snowflake_account_id
+    error_message = "Snowflake account ID should match the configured identifier"
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].name == var.snowflake_account_name
+    error_message = "Snowflake account name should match expected value"
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].etag != ""
+    error_message = "ETag should be set after creation; updates and deletes require it"
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].snowflake_organization_name != ""
+    error_message = "Snowflake organization name should be resolved from the account"
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].create_time != ""
+    error_message = "Create time should be set after creation"
+  }
+
+  # The schema declares the API's own defaults, so an unset value must resolve at
+  # plan time rather than staying unknown until after apply.
+  assert {
+    condition     = select_snowflake_account.test[0].query_sanitization_enabled == false
+    error_message = "query_sanitization_enabled should default to false"
+  }
+
+  # Never returned by the API, so state can only hold what the configuration says.
+  assert {
+    condition     = select_snowflake_account.test[0].credentials.username == var.snowflake_username
+    error_message = "Configured credentials should be preserved in state"
+  }
+}
+
+# A rename and a field the API can clear both go through one merge patch, and the
+# ETag moves with them.
+run "update_snowflake_account" {
+  command = apply
+
+  variables {
+    snowflake_account_name = "terraform-test-account-renamed"
+    snowflake_warehouse    = "SELECT_WH_ALT"
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].name == "terraform-test-account-renamed"
+    error_message = "Snowflake account name should reflect the update"
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].warehouse == "SELECT_WH_ALT"
+    error_message = "Warehouse should reflect the update"
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].id == var.snowflake_account_id
+    error_message = "Updating fields must not replace the account"
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].update_time != select_snowflake_account.test[0].create_time
+    error_message = "Update time should move past create time after an update"
+  }
+}
+
+# sync_enabled is one of the fields the API refuses to clear, so it has to be sent
+# as a value on every patch rather than omitted.
+run "disable_sync" {
+  command = apply
+
+  variables {
+    snowflake_account_name = "terraform-test-account-renamed"
+    snowflake_warehouse    = "SELECT_WH_ALT"
+    snowflake_sync_enabled = false
+  }
+
+  assert {
+    condition     = select_snowflake_account.test[0].sync_enabled == false
+    error_message = "sync_enabled should reflect the update"
+  }
+}

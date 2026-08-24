@@ -72,6 +72,67 @@ variable "complex_filter_expression_json" {
   default     = "{\"filters\":[{\"field\":\"warehouse_name\",\"operator\":\"in\",\"values\":[\"SELECT_BACKEND\"]},{\"field\":\"role_name\",\"operator\":\"in\",\"values\":[\"SELECT_BACKEND\",\"SELECT_CI\"]}],\"operator\":\"or\"}"
 }
 
+# Snowflake account test variables.
+#
+# Creating a Snowflake account makes SELECT validate the configuration against
+# Snowflake for real, so these tests need credentials that work and are off by
+# default. Set enable_snowflake_account_tests and the rest, then run
+# `make test-snowflake`.
+variable "enable_snowflake_account_tests" {
+  description = "Whether to manage a real Snowflake account. Creating one requires working Snowflake credentials."
+  type        = bool
+  default     = false
+}
+
+variable "snowflake_account_id" {
+  description = "Snowflake account identifier in ORGANIZATION-ACCOUNT form"
+  type        = string
+  default     = "terraform-test-org-terraform-test-account"
+}
+
+variable "snowflake_account_name" {
+  description = "Display name for the Snowflake account in SELECT"
+  type        = string
+  default     = "terraform-test-account"
+}
+
+variable "snowflake_username" {
+  description = "Snowflake user SELECT connects as"
+  type        = string
+  default     = "SELECT_USER"
+}
+
+variable "snowflake_private_key" {
+  description = "PEM-encoded private key for the Snowflake user"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "snowflake_role" {
+  description = "Snowflake role SELECT assumes"
+  type        = string
+  default     = "SELECT_ROLE"
+}
+
+variable "snowflake_warehouse" {
+  description = "Snowflake warehouse SELECT runs its queries on"
+  type        = string
+  default     = "SELECT_WH"
+}
+
+variable "snowflake_sync_enabled" {
+  description = "Whether SELECT syncs data for the test account"
+  type        = bool
+  default     = true
+}
+
+variable "snowflake_export_storage_integration_name" {
+  description = "Snowflake storage integration used to export data to SELECT"
+  type        = string
+  default     = "SELECT_STORAGE_INTEGRATION"
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -125,6 +186,27 @@ resource "select_usage_group" "test_complex_filter" {
   budget                 = null
   usage_group_set_id     = select_usage_group_set.test_org.id
   filter_expression_json = var.complex_filter_expression_json
+}
+
+# Snowflake account. count keeps it out of the way of every other test: with
+# enable_snowflake_account_tests unset there is no resource and no API call, so
+# provider.tftest.hcl and `terraform validate` run without Snowflake credentials.
+resource "select_snowflake_account" "test" {
+  count = var.enable_snowflake_account_tests ? 1 : 0
+
+  id   = var.snowflake_account_id
+  name = var.snowflake_account_name
+
+  credentials = {
+    authentication_method = "key_pair"
+    username              = var.snowflake_username
+    private_key           = var.snowflake_private_key
+  }
+
+  role                            = var.snowflake_role
+  warehouse                       = var.snowflake_warehouse
+  export_storage_integration_name = var.snowflake_export_storage_integration_name
+  sync_enabled                    = var.snowflake_sync_enabled
 }
 
 # Outputs for verification

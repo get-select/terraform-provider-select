@@ -47,7 +47,7 @@ func (c *HTTPClient) buildURL(endpoint string) string {
 	return fmt.Sprintf("%s%s", c.baseURL, endpoint)
 }
 
-func (c *HTTPClient) makeRequest(ctx context.Context, method, endpoint string, body io.Reader) (*http.Response, error) {
+func (c *HTTPClient) makeRequest(ctx context.Context, method, endpoint string, body io.Reader, headers map[string]string) (*http.Response, error) {
 	url := c.buildURL(endpoint)
 
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
@@ -59,6 +59,13 @@ func (c *HTTPClient) makeRequest(ctx context.Context, method, endpoint string, b
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
+	// The v2 API scopes every request by this header rather than by an
+	// organization ID in the path. Sending it unconditionally keeps one code path
+	// for both API versions; v1 ignores headers it does not read.
+	req.Header.Set("x-tenant-id", c.organizationId)
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -316,6 +323,73 @@ func updateTerraformFromAPI(dst interface{}, src map[string]interface{}) {
 	}
 }
 
+// The reflection-based converters above walk a flat model of scalar Terraform
+// types. These per-attribute helpers cover what they cannot express: a pointer,
+// so an explicit JSON null stays distinguishable from an omitted field, and
+// lists.
+
+// stringPointer returns nil for a null or unknown value, so the field is
+// serialized as JSON null rather than an empty string.
+func stringPointer(value types.String) *string {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	result := value.ValueString()
+	return &result
+}
+
+func numberPointer(value types.Number) *float64 {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	bigFloat := value.ValueBigFloat()
+	if bigFloat == nil {
+		return nil
+	}
+	result, _ := bigFloat.Float64()
+	return &result
+}
+
+func stringListPointer(ctx context.Context, value types.List) (*[]string, diag.Diagnostics) {
+	if value.IsNull() || value.IsUnknown() {
+		return nil, nil
+	}
+	result := []string{}
+	diags := value.ElementsAs(ctx, &result, false)
+	if diags.HasError() {
+		return nil, diags
+	}
+	return &result, diags
+}
+
+func stringValue(value *string) types.String {
+	if value == nil {
+		return types.StringNull()
+	}
+	return types.StringValue(*value)
+}
+
+func numberValue(value *float64) types.Number {
+	if value == nil {
+		return types.NumberNull()
+	}
+	return types.NumberValue(big.NewFloat(*value))
+}
+
+func boolValue(value *bool) types.Bool {
+	if value == nil {
+		return types.BoolNull()
+	}
+	return types.BoolValue(*value)
+}
+
+func stringListValue(ctx context.Context, value *[]string) (types.List, diag.Diagnostics) {
+	if value == nil {
+		return types.ListNull(types.StringType), nil
+	}
+	return types.ListValueFrom(ctx, types.StringType, *value)
+}
+
 type VersionResponse struct {
 	Id               string `json:"id"`
 	CreatedAt        string `json:"created_at"`
@@ -337,76 +411,169 @@ func NewAPIClient(apiKey, organizationId, baseURL string) *APIClient {
 	}
 }
 
-// doJSONRequest handles JSON requests and responses
-func (c *APIClient) doJSONRequest(ctx context.Context, method, endpoint string, requestBody interface{}, responseBody interface{}) diag.Diagnostics {
+// requestOptions carries per-request details that only some callers need.
+type requestOptions struct {
+	// headers are set in addition to the standard ones. The v2 API's optimistic
+	// concurrency runs through If-Match, which varies per request rather than
+	// per client.
+	headers map[string]string
+}
+
+// apiError is a non-2xx response from the API, in the terms a caller needs in
+// order to branch on it.
+type apiError struct {
+	StatusCode int
+	// Detail explains the failure: the `detail` member of an
+	// application/problem+json body, or the raw body when the response is not a
+	// problem document.
+	Detail string
+	// Code is the v2 problem catalogue code, such as "precondition_failed".
+	// Empty for responses that are not problem documents.
+	Code string
+	// Body is the undecoded response body, for callers that need members beyond
+	// the shared problem shape.
+	Body string
+}
+
+func (e *apiError) Error() string {
+	if e.Code != "" {
+		return fmt.Sprintf("%s (HTTP %d, %s)", e.Detail, e.StatusCode, e.Code)
+	}
+	return fmt.Sprintf("%s (HTTP %d)", e.Detail, e.StatusCode)
+}
+
+// newAPIError builds an apiError from a response body, reading the RFC 9457
+// members the v2 API returns when they are present.
+func newAPIError(statusCode int, body string) *apiError {
+	err := &apiError{StatusCode: statusCode, Detail: body, Body: body}
+
+	var problem struct {
+		Detail string `json:"detail"`
+		Code   string `json:"code"`
+		Title  string `json:"title"`
+	}
+	if jsonErr := json.Unmarshal([]byte(body), &problem); jsonErr != nil {
+		return err
+	}
+	if problem.Detail != "" {
+		err.Detail = problem.Detail
+	} else if problem.Title != "" {
+		err.Detail = problem.Title
+	}
+	err.Code = problem.Code
+	return err
+}
+
+// doRequest performs one HTTP+JSON exchange. A non-2xx response comes back as an
+// *apiError so callers can branch on the status; diagnostics are reserved for
+// failures that are not the API's answer, meaning transport errors and
+// undecodable bodies.
+func (c *APIClient) doRequest(ctx context.Context, method, endpoint string, requestBody, responseBody interface{}, opts requestOptions) (*apiError, diag.Diagnostics) {
 	var body io.Reader
 
 	if requestBody != nil {
-		convertedRequest := convertTerraformToAPI(requestBody)
+		payload := requestBody
+		// Terraform framework types are not directly marshalable, so a model
+		// passed straight from state is converted first. Callers that build their
+		// own request struct already hold plain Go values.
+		if !isPlainStruct(requestBody) {
+			payload = convertTerraformToAPI(requestBody)
+		}
 
-		jsonData, err := json.Marshal(convertedRequest)
+		jsonData, err := json.Marshal(payload)
 		if err != nil {
-			return handleJSONError("marshal request", err)
+			return nil, handleJSONError("marshal request", err)
 		}
 		body = bytes.NewBuffer(jsonData)
 	}
 
-	resp, err := c.httpClient.makeRequest(ctx, method, endpoint, body)
+	resp, err := c.httpClient.makeRequest(ctx, method, endpoint, body, opts.headers)
 	if err != nil {
-		return handleHTTPError(fmt.Sprintf("%s %s", method, endpoint), err)
+		return nil, handleHTTPError(fmt.Sprintf("%s %s", method, endpoint), err)
 	}
 	defer resp.Body.Close()
 
 	bodyStr, err := readResponseBody(resp)
 	if err != nil {
-		return diag.Diagnostics{
+		return nil, diag.Diagnostics{
 			diag.NewErrorDiagnostic("Response Read Error", fmt.Sprintf("Failed to read response body: %v", err)),
 		}
 	}
 
-	switch resp.StatusCode {
-	case http.StatusOK, http.StatusCreated:
-		if responseBody != nil && len(bodyStr) > 0 {
-			responseValue := reflect.ValueOf(responseBody)
-			if responseValue.Kind() == reflect.Ptr && responseValue.Elem().Kind() == reflect.Struct {
-				responseType := responseValue.Elem().Type()
-				isRegularStruct := false
-				for i := 0; i < responseType.NumField(); i++ {
-					field := responseType.Field(i)
-					if _, hasJSON := field.Tag.Lookup("json"); hasJSON {
-						if field.Type.PkgPath() == "" || !strings.Contains(field.Type.String(), "types.") {
-							isRegularStruct = true
-							break
-						}
-					}
-				}
-				
-				if isRegularStruct {
-					if err := json.Unmarshal([]byte(bodyStr), responseBody); err != nil {
-						return handleJSONError("unmarshal response", err)
-					}
-				} else {
-					var apiResponse map[string]interface{}
-					if err := json.Unmarshal([]byte(bodyStr), &apiResponse); err != nil {
-						return handleJSONError("unmarshal response", err)
-					}
-					updateTerraformFromAPI(responseBody, apiResponse)
-				}
-			}
-		}
-		return nil
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return newAPIError(resp.StatusCode, bodyStr), nil
+	}
 
-	case http.StatusNotFound:
+	if responseBody == nil || len(bodyStr) == 0 {
+		return nil, nil
+	}
+
+	responseValue := reflect.ValueOf(responseBody)
+	if responseValue.Kind() != reflect.Ptr || responseValue.Elem().Kind() != reflect.Struct {
+		return nil, nil
+	}
+
+	if isPlainStruct(responseBody) {
+		if err := json.Unmarshal([]byte(bodyStr), responseBody); err != nil {
+			return nil, handleJSONError("unmarshal response", err)
+		}
+		return nil, nil
+	}
+
+	var apiResponse map[string]interface{}
+	if err := json.Unmarshal([]byte(bodyStr), &apiResponse); err != nil {
+		return nil, handleJSONError("unmarshal response", err)
+	}
+	updateTerraformFromAPI(responseBody, apiResponse)
+	return nil, nil
+}
+
+// isPlainStruct reports whether a struct is built from ordinary Go types, as
+// opposed to a Terraform framework model. Only the former can go through
+// encoding/json directly.
+func isPlainStruct(value interface{}) bool {
+	structValue := reflect.ValueOf(value)
+	if structValue.Kind() == reflect.Ptr {
+		if structValue.IsNil() {
+			return false
+		}
+		structValue = structValue.Elem()
+	}
+	if structValue.Kind() != reflect.Struct {
+		return false
+	}
+
+	structType := structValue.Type()
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		if _, hasJSON := field.Tag.Lookup("json"); !hasJSON {
+			continue
+		}
+		if field.Type.PkgPath() == "" || !strings.Contains(field.Type.String(), "types.") {
+			return true
+		}
+	}
+	return false
+}
+
+// doJSONRequest handles JSON requests and responses, reporting everything as
+// diagnostics. A 404 is a warning rather than an error, which the v1 usage group
+// resources rely on; callers that need to act on the status use doRequest.
+func (c *APIClient) doJSONRequest(ctx context.Context, method, endpoint string, requestBody interface{}, responseBody interface{}) diag.Diagnostics {
+	apiErr, diags := c.doRequest(ctx, method, endpoint, requestBody, responseBody, requestOptions{})
+	if diags.HasError() {
+		return diags
+	}
+	if apiErr == nil {
+		return diags
+	}
+
+	if apiErr.StatusCode == http.StatusNotFound {
 		return diag.Diagnostics{
 			diag.NewWarningDiagnostic("Resource Not Found", fmt.Sprintf("Resource not found at %s", endpoint)),
 		}
-
-	case http.StatusNoContent:
-		return nil
-
-	default:
-		return handleResponseError(fmt.Sprintf("%s %s", method, endpoint), resp.StatusCode, bodyStr)
 	}
+	return handleResponseError(fmt.Sprintf("%s %s", method, endpoint), apiErr.StatusCode, apiErr.Body)
 }
 
 func (c *APIClient) Get(ctx context.Context, endpoint string, responseBody interface{}) diag.Diagnostics {

@@ -121,5 +121,6 @@ func (p *selectProvider) Resources(ctx context.Context) []func() resource.Resour
 	return []func() resource.Resource{
 		NewUsageGroupSetResource,
 		NewUsageGroupResource,
+		NewSnowflakeAccountResource,
 	}
 }
