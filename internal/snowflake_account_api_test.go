@@ -189,6 +189,35 @@ func TestUpdatePayloadOnlySendsChangedSecrets(t *testing.T) {
 	}
 }
 
+func TestUpdatePayloadRejectsClearingOnlyModeTokenSecret(t *testing.T) {
+	state := minimalAccount()
+	state.ModeWorkspace = types.StringValue("acme")
+	state.ModeTokenId = types.StringValue("token-1")
+	state.ModeTokenSecret = types.StringValue("secret-1")
+
+	withoutSecret := state
+	withoutSecret.ModeTokenSecret = types.StringNull()
+	_, diags := buildSnowflakeAccountUpdate(context.Background(), &withoutSecret, &state)
+	if !diags.HasError() {
+		t.Fatal("expected an error when mode_token_secret is removed without disconnecting Mode")
+	}
+
+	disconnected := withoutSecret
+	disconnected.ModeWorkspace = types.StringNull()
+	disconnected.ModeTokenId = types.StringNull()
+	payload, diags := buildSnowflakeAccountUpdate(context.Background(), &disconnected, &state)
+	if diags.HasError() {
+		t.Fatalf("disconnecting Mode should be accepted: %v", diags)
+	}
+	body := marshal(t, payload)
+	if workspace, present := body["mode_workspace"]; !present || workspace != nil {
+		t.Errorf("mode_workspace = %v (present=%v), want an explicit null", workspace, present)
+	}
+	if _, present := body["mode_token_secret"]; present {
+		t.Errorf("mode_token_secret should be omitted during Mode disconnect, got %v", body["mode_token_secret"])
+	}
+}
+
 func mustBuildUpdate(t *testing.T, plan, state *resource_snowflake_account.SnowflakeAccountModel) *snowflakeAccountUpdatePayload {
 	t.Helper()
 	payload, diags := buildSnowflakeAccountUpdate(context.Background(), plan, state)

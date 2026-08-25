@@ -188,6 +188,14 @@ func buildSnowflakeAccountCreate(ctx context.Context, plan *resource_snowflake_a
 func buildSnowflakeAccountUpdate(ctx context.Context, plan, state *resource_snowflake_account.SnowflakeAccountModel) (*snowflakeAccountUpdatePayload, diag.Diagnostics) {
 	var diags diag.Diagnostics
 
+	if modeTokenSecretClearedWithoutDisconnect(plan, state) {
+		diags.AddError(
+			"Mode Token Secret Cannot Be Cleared Alone",
+			"mode_token_secret cannot be removed by itself. To disconnect Mode, remove mode_workspace; SELECT clears the workspace, token ID, and stored secret together.",
+		)
+		return nil, diags
+	}
+
 	sanitizationViews, viewDiags := stringListPointer(ctx, plan.CustomerSideSanitizationViews)
 	diags.Append(viewDiags...)
 	fivetranUsers, userDiags := stringListPointer(ctx, plan.FivetranUsers)
@@ -227,6 +235,12 @@ func buildSnowflakeAccountUpdate(ctx context.Context, plan, state *resource_snow
 	}
 
 	return payload, diags
+}
+
+func modeTokenSecretClearedWithoutDisconnect(plan, state *resource_snowflake_account.SnowflakeAccountModel) bool {
+	return !state.ModeTokenSecret.IsNull() &&
+		plan.ModeTokenSecret.IsNull() &&
+		!plan.ModeWorkspace.IsNull()
 }
 
 // applySnowflakeAccountResponse writes an API response onto the model. The
