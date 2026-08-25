@@ -13,7 +13,13 @@
 # here. What only a live run can show is that the account round-trips: that the
 # API's own values land in state, and that an update is an update rather than a
 # replacement.
+#
+# Commented out for now: wiring this into CI needs a dedicated Snowflake test
+# account and credentials stored as CI secrets, which is being done as a
+# separate follow-up. `make test-snowflake` remains available for a manual
+# local run against your own test account in the meantime.
 
+/*
 variables {
   enable_snowflake_account_tests = true
 }
@@ -109,3 +115,4 @@ run "disable_sync" {
     error_message = "sync_enabled should reflect the update"
   }
 }
+*/
