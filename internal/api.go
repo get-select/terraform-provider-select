@@ -390,6 +390,56 @@ func stringListValue(ctx context.Context, value *[]string) (types.List, diag.Dia
 	return types.ListValueFrom(ctx, types.StringType, *value)
 }
 
+// preserveEquivalentJSON keeps the configured spelling of a JSON-encoded field
+// when the API returns the same document formatted differently, which would
+// otherwise read as drift on every plan.
+func preserveEquivalentJSON(configured types.String, returned *string) types.String {
+	if returned == nil || configured.IsNull() || configured.IsUnknown() {
+		return stringValue(returned)
+	}
+
+	configuredJSON, configuredErr := normalizeJSON(configured.ValueString())
+	returnedJSON, returnedErr := normalizeJSON(*returned)
+	if configuredErr == nil && returnedErr == nil && configuredJSON == returnedJSON {
+		return configured
+	}
+	return types.StringValue(*returned)
+}
+
+// preserveEquivalentList keeps a null configuration as null when the API
+// returns an empty (rather than absent) list for it.
+//
+// Some list fields have a server-side default of an empty collection that the
+// API applies even when the create/update body carries no value, so a field
+// the configuration never set comes back as [] rather than null. Terraform's
+// consistency check treats those as different values, so without this a
+// resource with no such field configured fails every apply.
+func preserveEquivalentList(ctx context.Context, configured types.List, returned *[]string) types.List {
+	if configured.IsNull() && !configured.IsUnknown() && returned != nil && len(*returned) == 0 {
+		return types.ListNull(types.StringType)
+	}
+	value, _ := stringListValue(ctx, returned)
+	return value
+}
+
+// preserveEquivalentNumber keeps the configured value when the API echoes the
+// same number back.
+//
+// Terraform parses a configured number at far higher precision than a JSON
+// float64 carries, so rebuilding one from the response changes its
+// representation without changing its value — and Terraform compares
+// representations. A rate of 0.1 would otherwise fail every apply with an
+// inconsistent-result error.
+func preserveEquivalentNumber(configured types.Number, returned *float64) types.Number {
+	if returned == nil || configured.IsNull() || configured.IsUnknown() {
+		return numberValue(returned)
+	}
+	if value := numberPointer(configured); value != nil && *value == *returned {
+		return configured
+	}
+	return numberValue(returned)
+}
+
 type VersionResponse struct {
 	Id               string `json:"id"`
 	CreatedAt        string `json:"created_at"`
