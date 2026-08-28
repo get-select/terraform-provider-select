@@ -49,3 +49,35 @@ resources:
             description: >-
               Opaque strong ETag for this account. Sent as `If-Match` on updates and
               deletes so a change made outside Terraform cannot be silently overwritten.
+
+  databricks_connection:
+    create:
+      path: /databricks-connections
+      method: POST
+    read:
+      path: /databricks-connections/{databricks_connection_id}
+      method: GET
+    update:
+      path: /databricks-connections/{databricks_connection_id}
+      method: PATCH
+    delete:
+      path: /databricks-connections/{databricks_connection_id}
+      method: DELETE
+    schema:
+      attributes:
+        aliases:
+          databricks_connection_id: id
+        overrides:
+          id:
+            description: >-
+              The connection's identifier in SELECT, assigned when it is added. Use it
+              with `terraform import` to bring an existing connection under management.
+          credentials:
+            description: >-
+              The service principal SELECT authenticates as. The secret in this block is
+              stored in a secret store and never returned by the API, so SELECT cannot
+              detect changes made to it outside Terraform.
+          etag:
+            description: >-
+              Opaque strong ETag for this connection. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.

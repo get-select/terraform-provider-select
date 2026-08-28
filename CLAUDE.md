@@ -23,6 +23,7 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `make test` - Run the Go unit tests and the Terraform provider tests
 - `cd tests && terraform test provider.tftest.hcl -filter=test_name` - Run specific test case
 - `make test-snowflake` - Snowflake account tests; needs working Snowflake credentials, so it is excluded from `make test`
+- `make test-databricks` - Databricks connection tests; needs a working Databricks service principal, so it is excluded from `make test`
 - `make test-clean` - Clean up test state files
 
 **Test Requirements**: Tests require environment variables:
@@ -61,6 +62,7 @@ Two limitations shape everything about the generator configs, and are easy to tr
 ```
 internal/
 ├── provider/               # Generated code (git-ignored, regenerated each build)
+│   ├── resource_databricks_connection/
 │   ├── resource_snowflake_account/
 │   ├── resource_usage_group/
 │   └── resource_usage_group_set/
@@ -68,8 +70,11 @@ internal/
 ├── api.go                 # HTTP client, API utilities, type conversion
 ├── usage_group_resource.go        # Custom resource implementation (connects generated types to API)
 ├── usage_group_set_resource.go    # Custom resource implementation
+├── v2_api.go                      # Conventions every v2 resource shares: If-Match, problem+json, validation reports
 ├── snowflake_account_resource.go  # Snowflake account resource (v2 API): CRUD and config validation
-└── snowflake_account_api.go       # Its request payloads, response mapping, and error formatting
+├── snowflake_account_api.go       # Its request payloads, response mapping, and error formatting
+├── databricks_connection_resource.go # Databricks connection resource (v2 API)
+└── databricks_connection_api.go      # Its request payloads, response mapping, and error formatting
 ```
 
 ### How Resources Work
@@ -169,7 +174,7 @@ The v2 surface differs from v1 in ways the client has to honour:
 - **Tenancy is a header.** Requests are scoped by `x-tenant-id` rather than an organization ID in the path. `makeRequest` sets it on every request; v1 ignores it.
 - **Writes require `If-Match`.** A configurable resource's `etag` must be echoed on update and delete: without it the API answers `428`, and with a stale value `412`. This is why `etag` is a computed attribute persisted in state.
 - **Errors are `application/problem+json`** (RFC 9457) carrying `detail` and a stable `code`. `newAPIError` reads them so diagnostics quote the API's own explanation rather than a raw body.
-- **Updates are JSON Merge Patch.** An omitted field is left unchanged and `null` clears it, so a resource whose desired state comes from Terraform sends every clearable field on every update. A few fields cannot be cleared at all — see `snowflakeAccountUpdatePayload`.
+- **Updates are JSON Merge Patch.** An omitted field is left unchanged and `null` clears it. What that implies for a payload depends on the resource: `snowflakeAccountUpdatePayload` sends every clearable field on every update, because removing one from a configuration has to reach the API as the `null` that clears it. `databricksConnectionUpdatePayload` sends only what changed, because nothing on that resource can be cleared and SELECT re-validates against Databricks whenever the access-related fields are merely *present*. Read the API's update schema before deciding which shape a new resource needs.
 - **`doRequest` returns the status.** `doJSONRequest` flattens everything into diagnostics (and reports a 404 as a warning) for the v1 resources; callers that need to act on a status, such as removing a deleted resource from state, use `doRequest` directly.
 
 ## Testing Notes

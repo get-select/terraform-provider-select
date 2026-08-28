@@ -133,6 +133,61 @@ variable "snowflake_export_storage_integration_name" {
   default     = "SELECT_STORAGE_INTEGRATION"
 }
 
+# Databricks connection test variables.
+#
+# Creating a Databricks connection makes SELECT validate the configuration
+# against Databricks for real, so these tests need a service principal that works
+# and are off by default. Set enable_databricks_connection_tests and the rest,
+# then run `make test-databricks`.
+variable "enable_databricks_connection_tests" {
+  description = "Whether to manage a real Databricks connection. Creating one requires working Databricks credentials."
+  type        = bool
+  default     = false
+}
+
+variable "databricks_connection_name" {
+  description = "Display name for the Databricks connection in SELECT"
+  type        = string
+  default     = "terraform-test-databricks-connection"
+}
+
+variable "databricks_account_id" {
+  description = "Databricks account SELECT reads usage and spend for"
+  type        = string
+  default     = "00000000-0000-0000-0000-000000000000"
+}
+
+variable "databricks_workspace_url" {
+  description = "URL of the workspace SELECT connects through, including the scheme"
+  type        = string
+  default     = "https://terraform-test.cloud.databricks.com"
+}
+
+variable "databricks_warehouse_id" {
+  description = "SQL warehouse in that workspace SELECT runs its queries on"
+  type        = string
+  default     = "0000000000000000"
+}
+
+variable "databricks_client_id" {
+  description = "Client ID of the service principal SELECT authenticates as"
+  type        = string
+  default     = ""
+}
+
+variable "databricks_client_secret" {
+  description = "OAuth secret generated for that service principal"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "databricks_sync_enabled" {
+  description = "Whether SELECT syncs data for the test connection"
+  type        = bool
+  default     = true
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -207,6 +262,27 @@ resource "select_snowflake_account" "test" {
   warehouse                       = var.snowflake_warehouse
   export_storage_integration_name = var.snowflake_export_storage_integration_name
   sync_enabled                    = var.snowflake_sync_enabled
+}
+
+# Databricks connection. count keeps it out of the way of every other test: with
+# enable_databricks_connection_tests unset there is no resource and no API call,
+# so provider.tftest.hcl and `terraform validate` run without Databricks
+# credentials.
+resource "select_databricks_connection" "test" {
+  count = var.enable_databricks_connection_tests ? 1 : 0
+
+  name = var.databricks_connection_name
+
+  databricks_account_id = var.databricks_account_id
+  primary_workspace_url = var.databricks_workspace_url
+  warehouse_id          = var.databricks_warehouse_id
+
+  credentials = {
+    client_id     = var.databricks_client_id
+    client_secret = var.databricks_client_secret
+  }
+
+  sync_enabled = var.databricks_sync_enabled
 }
 
 # Outputs for verification

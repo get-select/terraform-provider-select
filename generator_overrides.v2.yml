@@ -123,3 +123,39 @@ resources:
         computed_optional_required: optional
       mode_token_secret:
         computed_optional_required: optional
+
+  databricks_connection:
+    description: >-
+      A connection to one Databricks account: the workspace SELECT reads through,
+      the SQL warehouse it runs its queries on, and the service principal it
+      authenticates as.
+
+    description_sources:
+      - DatabricksConnectionCreate
+      - DatabricksConnection
+
+    attributes:
+      # Absent from DatabricksConnectionUpdate entirely — the account a connection
+      # reads cannot change once it has been added, so a new value has to mean a
+      # new connection.
+      databricks_account_id:
+        requires_replace: true
+
+      # SELECT assigns each of these once, when the connection is added, and never
+      # changes it afterwards. Holding them from state keeps them out of the
+      # "known after apply" list on every unrelated update.
+      #
+      # Deliberately not listed: etag and update_time, which change by design (and
+      # move when the parent connection row changes, so a rename or a sync toggle
+      # bumps them); metastore, which is re-resolved whenever a workspace,
+      # warehouse or credential change triggers revalidation; workspace_ids, which
+      # accumulates as SELECT discovers activity; and last_successful_sync_time,
+      # which moves as syncs run.
+      id:
+        use_state_for_unknown: true
+      connection_id:
+        use_state_for_unknown: true
+      added_by_email:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true

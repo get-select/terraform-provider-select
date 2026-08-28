@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-snowflake test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+.PHONY: codegen build install clean reset test test-go test-all test-snowflake test-databricks test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 # The provider is generated from two OpenAPI documents: the v1 public API
 # (openapi.public.json) and the v2 API (openapi.v2.json), which is a separate
 # FastAPI app with its own document. Each needs its own generator config and its
@@ -116,6 +116,20 @@ test-snowflake:
 	@echo "Running Snowflake account tests against a real Snowflake connection..."
 	cd tests && terraform test snowflake_account.tftest.hcl
 
+# Databricks connection tests, which manage a real connection: creating one makes
+# SELECT validate the configuration against Databricks, so these need a service
+# principal that works and are kept out of `make test`.
+#
+# Required environment:
+#   TF_VAR_select_api_key      an API key with databricks_connections:read and :write
+#   TF_VAR_select_organization_id
+#   TF_VAR_databricks_account_id, TF_VAR_databricks_workspace_url,
+#   TF_VAR_databricks_warehouse_id, TF_VAR_databricks_client_id,
+#   TF_VAR_databricks_client_secret
+test-databricks:
+	@echo "Running Databricks connection tests against a real Databricks account..."
+	cd tests && terraform test databricks_connection.tftest.hcl
+
 test-clean:
 	@echo "Cleaning up test resources..."
 	@echo "Removing test state files..."
@@ -124,7 +138,8 @@ test-clean:
 	find tests/ -name ".terraform.lock.hcl" -delete
 	@echo "Test cleanup complete!"
 
-# Convenience alias. Excludes test-snowflake, which needs real Snowflake credentials.
+# Convenience alias. Excludes test-snowflake and test-databricks, which need real
+# credentials for the system being connected.
 test: test-go test-all
 
 docs:
@@ -170,6 +185,7 @@ help:
 	@echo "  test-all         - Run the Terraform provider tests"
 	@echo "  test             - Run test-go and test-all"
 	@echo "  test-snowflake   - Run Snowflake account tests (needs real Snowflake credentials)"
+	@echo "  test-databricks  - Run Databricks connection tests (needs real Databricks credentials)"
 	@echo "  test-clean       - Clean up test resources and state files"
 	@echo ""
 	@echo "Run individual tests with:"

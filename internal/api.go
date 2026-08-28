@@ -338,6 +338,14 @@ func stringPointer(value types.String) *string {
 	return &result
 }
 
+func boolPointer(value types.Bool) *bool {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	result := value.ValueBool()
+	return &result
+}
+
 func numberPointer(value types.Number) *float64 {
 	if value.IsNull() || value.IsUnknown() {
 		return nil
@@ -480,9 +488,30 @@ type apiError struct {
 	// Code is the v2 problem catalogue code, such as "precondition_failed".
 	// Empty for responses that are not problem documents.
 	Code string
+	// Details are the problem document's `details` members, which narrow a code
+	// that covers several situations to the one that fired. A 409 conflict, for
+	// instance, means something different for every issue it carries.
+	Details []apiErrorDetail
 	// Body is the undecoded response body, for callers that need members beyond
 	// the shared problem shape.
 	Body string
+}
+
+// apiErrorDetail is one member of a problem document's `details` array.
+type apiErrorDetail struct {
+	Field    string `json:"field"`
+	Issue    string `json:"issue"`
+	Message  string `json:"message"`
+	DocsLink string `json:"docs_link"`
+}
+
+// issue returns the first detail's machine-readable issue, which is what a
+// caller branches on. Empty when the API sent no details.
+func (e *apiError) issue() string {
+	if len(e.Details) == 0 {
+		return ""
+	}
+	return e.Details[0].Issue
 }
 
 func (e *apiError) Error() string {
@@ -498,9 +527,10 @@ func newAPIError(statusCode int, body string) *apiError {
 	err := &apiError{StatusCode: statusCode, Detail: body, Body: body}
 
 	var problem struct {
-		Detail string `json:"detail"`
-		Code   string `json:"code"`
-		Title  string `json:"title"`
+		Detail  string           `json:"detail"`
+		Code    string           `json:"code"`
+		Title   string           `json:"title"`
+		Details []apiErrorDetail `json:"details"`
 	}
 	if jsonErr := json.Unmarshal([]byte(body), &problem); jsonErr != nil {
 		return err
@@ -511,6 +541,7 @@ func newAPIError(statusCode int, body string) *apiError {
 		err.Detail = problem.Title
 	}
 	err.Code = problem.Code
+	err.Details = problem.Details
 	return err
 }
 

@@ -11,6 +11,7 @@ The Select Terraform provider supports importing existing resources that were cr
 - `select_usage_group_set` - Usage Group Sets
 - `select_usage_group` - Usage Groups
 - `select_snowflake_account` - Snowflake Accounts
+- `select_databricks_connection` - Databricks Connections
 
 ## Prerequisites
 
@@ -84,6 +85,18 @@ The ID is the Snowflake account's own identifier, so there is nothing to look up
 Running `select current_organization_name(), current_account_name();` in Snowflake gives you both halves. For `ACME` and `US_EAST_1`, the ID is `acme-us_east_1`.
 
 A PrivateLink identifier keeps its dots, because the host it resolves to does: `acme-us-east-1.privatelink`.
+
+### Databricks Connection ID
+
+Unlike a Snowflake account, a Databricks connection's ID is assigned by SELECT when the connection is added, so there is nothing about your Databricks setup that predicts it.
+
+Open the connection in the SELECT UI and take the last segment of the URL, or list them with the API:
+
+```bash
+curl -s https://api.select.dev/v2/databricks-connections \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, databricks_account_id}'
+```
 
 ## Converting Filter Expressions from JSON to Terraform
 
@@ -174,6 +187,20 @@ terraform import select_snowflake_account.production acme-us-east-1
 ```
 
 **Note**: An import cannot recover `credentials`. SELECT keeps them in a secret store and never returns them, so put the credentials in your configuration before importing. The first `terraform plan` after the import will show `credentials` as a change, and applying it re-sends them. That plan may also show a whitespace-only change to `excluded_users_filter_expression`, because SELECT stores it as a JSON document and re-serializes it on the way out; applying once settles it.
+
+### Importing a Databricks Connection
+
+**Command Format:**
+```bash
+terraform import select_databricks_connection.<resource_name> <databricks_connection_id>
+```
+
+**Example:**
+```bash
+terraform import select_databricks_connection.production 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+**Note**: An import cannot recover `credentials`. SELECT returns neither the client ID nor the secret on this resource, so put both in your configuration before importing. The first `terraform plan` after the import will show `credentials` as a change; applying it re-sends them, which makes SELECT revalidate the connection against Databricks.
 
 ## Step-by-Step Import Process
 
