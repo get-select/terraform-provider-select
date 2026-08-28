@@ -81,3 +81,38 @@ resources:
             description: >-
               Opaque strong ETag for this connection. Sent as `If-Match` on updates and
               deletes so a change made outside Terraform cannot be silently overwritten.
+
+  bigquery_connection:
+    create:
+      path: /bigquery-connections
+      method: POST
+    read:
+      path: /bigquery-connections/{bigquery_connection_id}
+      method: GET
+    update:
+      path: /bigquery-connections/{bigquery_connection_id}
+      method: PATCH
+    delete:
+      path: /bigquery-connections/{bigquery_connection_id}
+      method: DELETE
+    schema:
+      attributes:
+        aliases:
+          bigquery_connection_id: id
+        overrides:
+          id:
+            description: >-
+              The connection's identifier in SELECT, assigned when it is added. Use it
+              with `terraform import` to bring an existing connection under management.
+          etag:
+            description: >-
+              Opaque strong ETag for this connection. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.
+          is_doit:
+            description: >-
+              Set this when the project's GCP billing account is managed by DoiT as a
+              resale customer, so SELECT reads its spend from DoiT's billing data instead
+              of an export in your own dataset. Cannot be changed once the connection is
+              added. Creating a connection with this set requires a user credential
+              rather than an API key, so it has to be added in the SELECT UI and brought
+              under Terraform with `terraform import`.

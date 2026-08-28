@@ -159,3 +159,62 @@ resources:
         use_state_for_unknown: true
       create_time:
         use_state_for_unknown: true
+
+  bigquery_connection:
+    description: >-
+      A connection to one BigQuery project: the project and dataset SELECT reads,
+      the billing account its exports belong to, and the service account it
+      impersonates to reach them.
+
+    description_sources:
+      - BigQueryConnectionCreate
+      - BigQueryConnection
+
+    attributes:
+      # Absent from BigQueryConnectionUpdate entirely, and creating one with this
+      # set requires a user credential the provider cannot hold — see is_doit's
+      # description override. A new value has to mean a new connection.
+      is_doit:
+        requires_replace: true
+
+      # bigquery_dataset_id and billing_account_id are left computed_optional as
+      # generated, unlike the Snowflake account fields with the same shape. There
+      # the concern was that removing a field from a configuration would silently
+      # keep the old value instead of clearing it. Here that can't happen: the
+      # resource's ValidateConfig already requires both fields whenever is_doit is
+      # false and rejects them outright when it is true, so an omission is always
+      # caught at plan time regardless of whether the attribute is optional or
+      # computed_optional.
+
+      # SELECT assigns or resolves each of these once and does not change it on an
+      # unrelated update. Holding them from state keeps them out of "known after
+      # apply" on every other change.
+      #
+      # Deliberately not listed: etag and update_time, which change by design;
+      # gcp_organization_id, gcp_organization_name and regions, which re-resolve
+      # whenever an access-related update revalidates against BigQuery (unlike
+      # Snowflake's equivalent fields, gcp_project_id is mutable in place here, so
+      # these can genuinely move); doit_billing_status and
+      # last_successful_sync_time, which move as SELECT confirms access and syncs
+      # run.
+      id:
+        use_state_for_unknown: true
+      added_by_email:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
+      # The OpenAPI pattern for this field is `^[a-zA-Z0-9_]{1,1024}$`. Go's
+      # regexp package refuses to compile a repeat count above 1000 (RE2's
+      # limit), which crashes the provider on startup rather than merely
+      # failing one plan. Capping the client-side pattern at some smaller
+      # number would validate a bound the API does not actually enforce, so
+      # the length is dropped here and left entirely to the API, keeping only
+      # the part of the rule Go can check: the character class.
+      bigquery_dataset_id:
+        validators:
+          - custom:
+              imports:
+                - path: regexp
+                - path: github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator
+              schema_definition: stringvalidator.RegexMatches(regexp.MustCompile("^[a-zA-Z0-9_]+$"), "")

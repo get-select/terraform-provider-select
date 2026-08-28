@@ -12,6 +12,7 @@ The Select Terraform provider supports importing existing resources that were cr
 - `select_usage_group` - Usage Groups
 - `select_snowflake_account` - Snowflake Accounts
 - `select_databricks_connection` - Databricks Connections
+- `select_bigquery_connection` - BigQuery Connections
 
 ## Prerequisites
 
@@ -96,6 +97,18 @@ Open the connection in the SELECT UI and take the last segment of the URL, or li
 curl -s https://api.select.dev/v2/databricks-connections \
   -H "Authorization: Bearer $SELECT_API_KEY" \
   -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, databricks_account_id}'
+```
+
+### BigQuery Connection ID
+
+Like a Databricks connection and unlike a Snowflake account, a BigQuery connection's ID is assigned by SELECT when the connection is added, so there is nothing about your GCP project that predicts it.
+
+Open the connection in the SELECT UI and take the last segment of the URL, or list them with the API:
+
+```bash
+curl -s https://api.select.dev/v2/bigquery-connections \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, gcp_project_id}'
 ```
 
 ## Converting Filter Expressions from JSON to Terraform
@@ -201,6 +214,20 @@ terraform import select_databricks_connection.production 2f1c8b4e-9a6d-4d1f-9d0e
 ```
 
 **Note**: An import cannot recover `credentials`. SELECT returns neither the client ID nor the secret on this resource, so put both in your configuration before importing. The first `terraform plan` after the import will show `credentials` as a change; applying it re-sends them, which makes SELECT revalidate the connection against Databricks.
+
+### Importing a BigQuery Connection
+
+**Command Format:**
+```bash
+terraform import select_bigquery_connection.<resource_name> <bigquery_connection_id>
+```
+
+**Example:**
+```bash
+terraform import select_bigquery_connection.production 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+**Note**: This resource treats `service_account` as required, but a connection reached without impersonation has none on the API side. Set one in your configuration before importing a connection like that, or the first `terraform plan` will show it as a change from null to a value.
 
 ## Step-by-Step Import Process
 

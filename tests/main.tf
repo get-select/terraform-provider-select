@@ -188,6 +188,54 @@ variable "databricks_sync_enabled" {
   default     = true
 }
 
+# BigQuery connection test variables.
+#
+# Creating a BigQuery connection makes SELECT validate the configuration
+# against BigQuery for real, so these tests need a GCP project and service
+# account that work and are off by default. Set enable_bigquery_connection_tests
+# and the rest, then run `make test-bigquery`.
+variable "enable_bigquery_connection_tests" {
+  description = "Whether to manage a real BigQuery connection. Creating one requires a working GCP project and service account."
+  type        = bool
+  default     = false
+}
+
+variable "bigquery_connection_name" {
+  description = "Display name for the BigQuery connection in SELECT"
+  type        = string
+  default     = "terraform-test-bigquery-connection"
+}
+
+variable "bigquery_gcp_project_id" {
+  description = "GCP project SELECT reads BigQuery usage and spend from"
+  type        = string
+  default     = "terraform-test-project"
+}
+
+variable "bigquery_dataset_id" {
+  description = "BigQuery dataset holding the project's billing and pricing exports"
+  type        = string
+  default     = "billing_export"
+}
+
+variable "bigquery_billing_account_id" {
+  description = "Cloud Billing account the exports belong to, in XXXXXX-XXXXXX-XXXXXX form"
+  type        = string
+  default     = "000000-000000-000000"
+}
+
+variable "bigquery_service_account" {
+  description = "GCP service account SELECT impersonates to reach the project"
+  type        = string
+  default     = "select@terraform-test-project.iam.gserviceaccount.com"
+}
+
+variable "bigquery_sync_enabled" {
+  description = "Whether SELECT syncs data for the test connection"
+  type        = bool
+  default     = true
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -283,6 +331,22 @@ resource "select_databricks_connection" "test" {
   }
 
   sync_enabled = var.databricks_sync_enabled
+}
+
+# BigQuery connection. count keeps it out of the way of every other test: with
+# enable_bigquery_connection_tests unset there is no resource and no API call,
+# so provider.tftest.hcl and `terraform validate` run without GCP credentials.
+resource "select_bigquery_connection" "test" {
+  count = var.enable_bigquery_connection_tests ? 1 : 0
+
+  name = var.bigquery_connection_name
+
+  gcp_project_id      = var.bigquery_gcp_project_id
+  bigquery_dataset_id = var.bigquery_dataset_id
+  billing_account_id  = var.bigquery_billing_account_id
+  service_account     = var.bigquery_service_account
+
+  sync_enabled = var.bigquery_sync_enabled
 }
 
 # Outputs for verification

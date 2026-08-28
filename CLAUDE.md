@@ -24,6 +24,7 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `cd tests && terraform test provider.tftest.hcl -filter=test_name` - Run specific test case
 - `make test-snowflake` - Snowflake account tests; needs working Snowflake credentials, so it is excluded from `make test`
 - `make test-databricks` - Databricks connection tests; needs a working Databricks service principal, so it is excluded from `make test`
+- `make test-bigquery` - BigQuery connection tests; needs a working GCP project and service account, so it is excluded from `make test`
 - `make test-clean` - Clean up test state files
 
 **Test Requirements**: Tests require environment variables:
@@ -62,6 +63,7 @@ Two limitations shape everything about the generator configs, and are easy to tr
 ```
 internal/
 ├── provider/               # Generated code (git-ignored, regenerated each build)
+│   ├── resource_bigquery_connection/
 │   ├── resource_databricks_connection/
 │   ├── resource_snowflake_account/
 │   ├── resource_usage_group/
@@ -74,7 +76,9 @@ internal/
 ├── snowflake_account_resource.go  # Snowflake account resource (v2 API): CRUD and config validation
 ├── snowflake_account_api.go       # Its request payloads, response mapping, and error formatting
 ├── databricks_connection_resource.go # Databricks connection resource (v2 API)
-└── databricks_connection_api.go      # Its request payloads, response mapping, and error formatting
+├── databricks_connection_api.go      # Its request payloads, response mapping, and error formatting
+├── bigquery_connection_resource.go   # BigQuery connection resource (v2 API)
+└── bigquery_connection_api.go        # Its request payloads, response mapping, and error formatting
 ```
 
 ### How Resources Work
