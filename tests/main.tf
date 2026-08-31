@@ -236,6 +236,67 @@ variable "bigquery_sync_enabled" {
   default     = true
 }
 
+# AWS connection test variables.
+#
+# Creating an AWS connection makes SELECT read the Cost and Usage Report out of
+# S3 for real, so these tests need an AWS payer account with a working CUR
+# delivery and are off by default. Set enable_aws_connection_tests and the rest,
+# then run `make test-aws`.
+variable "enable_aws_connection_tests" {
+  description = "Whether to manage a real AWS connection. Creating one requires an AWS payer account with a working CUR delivery."
+  type        = bool
+  default     = false
+}
+
+variable "aws_connection_name" {
+  description = "Display name for the AWS connection in SELECT"
+  type        = string
+  default     = "terraform-test-aws-connection"
+}
+
+variable "aws_payer_account_id" {
+  description = "12-digit AWS payer account SELECT reads spend for"
+  type        = string
+  default     = "000000000000"
+}
+
+variable "aws_s3_bucket" {
+  description = "S3 bucket AWS delivers the payer account's Cost and Usage Report to"
+  type        = string
+  default     = "terraform-test-cur"
+}
+
+variable "aws_s3_prefix" {
+  description = "Path within the bucket the report is delivered under. Null means the root of the bucket."
+  type        = string
+  default     = "reports"
+}
+
+variable "aws_region" {
+  description = "AWS region the bucket is in"
+  type        = string
+  default     = "us-east-1"
+}
+
+variable "aws_access_key_id" {
+  description = "Access key id of the IAM user SELECT authenticates as"
+  type        = string
+  default     = ""
+}
+
+variable "aws_secret_access_key" {
+  description = "Secret access key paired with aws_access_key_id"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "aws_sync_enabled" {
+  description = "Whether SELECT syncs data for the test connection"
+  type        = bool
+  default     = true
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -347,6 +408,27 @@ resource "select_bigquery_connection" "test" {
   service_account     = var.bigquery_service_account
 
   sync_enabled = var.bigquery_sync_enabled
+}
+
+# AWS connection. count keeps it out of the way of every other test: with
+# enable_aws_connection_tests unset there is no resource and no API call, so
+# provider.tftest.hcl and `terraform validate` run without AWS credentials.
+resource "select_aws_connection" "test" {
+  count = var.enable_aws_connection_tests ? 1 : 0
+
+  name = var.aws_connection_name
+
+  payer_account_id = var.aws_payer_account_id
+  s3_bucket        = var.aws_s3_bucket
+  s3_prefix        = var.aws_s3_prefix
+  region           = var.aws_region
+
+  credentials = {
+    access_key_id     = var.aws_access_key_id
+    secret_access_key = var.aws_secret_access_key
+  }
+
+  sync_enabled = var.aws_sync_enabled
 }
 
 # Outputs for verification

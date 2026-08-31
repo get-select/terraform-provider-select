@@ -13,6 +13,7 @@ The Select Terraform provider supports importing existing resources that were cr
 - `select_snowflake_account` - Snowflake Accounts
 - `select_databricks_connection` - Databricks Connections
 - `select_bigquery_connection` - BigQuery Connections
+- `select_aws_connection` - AWS Connections
 
 ## Prerequisites
 
@@ -109,6 +110,18 @@ Open the connection in the SELECT UI and take the last segment of the URL, or li
 curl -s https://api.select.dev/v2/bigquery-connections \
   -H "Authorization: Bearer $SELECT_API_KEY" \
   -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, gcp_project_id}'
+```
+
+### AWS Connection ID
+
+Like a Databricks or BigQuery connection, an AWS connection's ID is assigned by SELECT when the connection is added, so there is nothing about your AWS account that predicts it. Note that the API calls this resource an AWS account.
+
+Open the connection in the SELECT UI and take the last segment of the URL, or list them with the API:
+
+```bash
+curl -s https://api.select.dev/v2/aws-accounts \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, payer_account_id}'
 ```
 
 ## Converting Filter Expressions from JSON to Terraform
@@ -228,6 +241,20 @@ terraform import select_bigquery_connection.production 2f1c8b4e-9a6d-4d1f-9d0e-7
 ```
 
 **Note**: This resource treats `service_account` as required, but a connection reached without impersonation has none on the API side. Set one in your configuration before importing a connection like that, or the first `terraform plan` will show it as a change from null to a value.
+
+### Importing an AWS Connection
+
+**Command Format:**
+```bash
+terraform import select_aws_connection.<resource_name> <aws_connection_id>
+```
+
+**Example:**
+```bash
+terraform import select_aws_connection.production 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+**Note**: An import cannot recover `credentials`. SELECT returns neither the access key id nor the secret on this resource, so put both in your configuration before importing. The first `terraform plan` after the import will show `credentials` as a change; applying it re-sends them, which makes SELECT revalidate the connection against S3.
 
 ## Step-by-Step Import Process
 

@@ -67,6 +67,8 @@ resources:
         use_state_for_unknown: true
       create_time:
         use_state_for_unknown: true
+      connection_id:
+        use_state_for_unknown: true
 
       # SELECT stores each of these exactly as given and returns it unchanged, so
       # the configuration is the only source for them.
@@ -213,6 +215,52 @@ resources:
       # these can genuinely move); doit_billing_status and
       # last_successful_sync_time, which move as SELECT confirms access and syncs
       # run.
+      id:
+        use_state_for_unknown: true
+      connection_id:
+        use_state_for_unknown: true
+      added_by_email:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
+  aws_connection:
+    description: >-
+      A connection to one AWS payer account: the S3 location AWS delivers its Cost
+      and Usage Report to, and the IAM user SELECT reads that report as.
+
+    description_sources:
+      - AwsAccountCreate
+      - AwsAccount
+
+    attributes:
+      # Nothing here is marked requires_replace, unlike every other v2 connection.
+      # AwsAccountCreate and AwsAccountUpdate cover exactly the same fields, so
+      # there is no creation-only value a change would have to replace the
+      # connection over — not even payer_account_id, which the API moves in place
+      # and merely revalidates against S3.
+
+      # s3_prefix is the one field on this resource the API lets you clear, and
+      # the only one that has to be plain optional rather than the
+      # computed_optional the generator produces for a field appearing in both the
+      # request and the response. computed_optional means a null in the
+      # configuration keeps whatever state already holds, so removing s3_prefix
+      # from a configuration would silently leave the connection reading the old
+      # prefix instead of moving it to the root of the bucket. Plain optional is
+      # what makes a removal reach the API as the null that clears it.
+      #
+      # Safe here for the same reason it is safe for the Snowflake fields above:
+      # SELECT stores the value exactly as given and returns it unchanged.
+      s3_prefix:
+        computed_optional_required: optional
+
+      # SELECT assigns each of these once, when the connection is added, and never
+      # changes it afterwards. Holding them from state keeps them out of the
+      # "known after apply" list on every unrelated update.
+      #
+      # Deliberately not listed: etag and update_time, which change by design (and
+      # move when the parent connection row changes, so a rename or a sync toggle
+      # bumps them); and last_successful_sync_time, which moves as syncs run.
       id:
         use_state_for_unknown: true
       connection_id:

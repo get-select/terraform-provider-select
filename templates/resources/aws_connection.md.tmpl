@@ -1,0 +1,77 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+An AWS connection is how SELECT reads one AWS payer account's spend: the S3 bucket AWS delivers that account's Cost and Usage Report to, the path within it the report lands under, and the IAM user SELECT reads those objects as. To learn more, see the [SELECT documentation](https://select.dev/docs/getting-started).
+
+This resource is backed by SELECT's v2 API, where the underlying resource is called an AWS account and lives at `/v2/aws-accounts`. The `api_key` configured on the provider must carry the `aws_accounts:read` and `aws_accounts:write` scopes; without them every operation fails with an authorization error.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the connection's ID in SELECT:
+
+```bash
+terraform import {{ .Name }}.example 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+The ID is assigned by SELECT when the connection is added, so unlike a Snowflake account there is nothing about your AWS setup that predicts it. It is the `id` attribute, and it is also the last path segment of the connection's page in the SELECT UI.
+
+An import cannot recover `credentials`: SELECT stores the secret access key in a secret store and returns neither half of the pair on this resource. Put the credentials in your configuration before importing, and the first apply after the import will re-send them — which makes SELECT revalidate the connection against S3.
+
+## Additional Information
+
+### Credentials are an IAM user, not a role
+
+SELECT authenticates with an access key pair belonging to an IAM user that can list and read the report objects under `s3_prefix`. There is no assume-role path on this connection: no `role_arn`, and no external id. Rotation is atomic — `access_key_id` and `secret_access_key` move together, because SELECT has no way to change one without the other.
+
+SELECT never returns either value, so a change made outside Terraform is invisible to a refresh. Terraform re-sends the configured pair only when the configured values themselves change.
+
+### Creating a connection validates it against S3
+
+SELECT runs three checks in order before it stores anything: reaching the bucket, finding a CUR manifest under the prefix, and reading the first manifest object. A create that fails leaves no connection behind, and the error names the check that stopped the run along with what to change. A check is only reported as `skipped` when an earlier one already failed.
+
+This means `terraform apply` needs credentials that actually work and a report that has actually been delivered, and that an AWS outage will fail the apply rather than store a broken connection.
+
+There is deliberately no separate credentials check: S3's `HeadBucket` does not reliably distinguish invalid credentials from valid credentials that cannot reach this particular bucket. The failure message carries the AWS error code, so the two are still distinguishable from what SELECT reports.
+
+### Which changes revalidate
+
+SELECT revalidates whenever an apply changes `payer_account_id`, `s3_bucket`, `s3_prefix`, `region` or `credentials`. Changing only `name` or `sync_enabled` makes no call to AWS, so a rename works even when S3 does not.
+
+### Nothing forces a replacement
+
+Every configurable field on this resource can be changed in place, including `payer_account_id` — SELECT moves the connection to the new payer account and revalidates rather than requiring a new connection. This is unlike the Snowflake, Databricks and BigQuery resources, each of which has at least one field fixed at creation.
+
+### One connection per payer account, and per report location
+
+SELECT refuses a second connection that would read ground it already covers. Two configurations are rejected:
+
+- a `payer_account_id` that another connection in the organization already reads, and
+- an `s3_bucket` and `s3_prefix` pair another connection already reads.
+
+The second is worth calling out separately: two payer accounts delivering to the same bucket need different prefixes.
+
+### `s3_prefix` is the only field that can be cleared
+
+Removing `s3_prefix` from the configuration moves SELECT to reading the root of the bucket. Every other field rejects removal — an account with no name, no payer id, no bucket, no region or no credentials cannot ingest anything, so there is no cleared state for them to have.
+
+An empty string is not the same as no prefix. `s3_prefix = ""` is stored as an empty prefix and counts as a different report location from an absent one when SELECT checks for duplicates. Omit the field rather than setting it to `""`.
+
+### Changes made outside Terraform
+
+Every write carries the connection's `etag` as an `If-Match` header, so an update or delete is refused if the connection changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.
+
+The ETag also moves when the connection is renamed or when `sync_enabled` is toggled, because both are stored on the underlying connection record. An update revalidates its ETag a second time after the round trip to S3, so a concurrent write that lands mid-request is refused rather than silently overwritten.
+
+### Deleting a connection is not reversible
+
+Destroying this resource removes the connection and the usage data SELECT has collected through it. Re-adding the same payer account and report location starts its history over.

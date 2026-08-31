@@ -338,6 +338,37 @@ func stringPointer(value types.String) *string {
 	return &result
 }
 
+// nullableString is a merge-patch field that has to say three things a *string
+// cannot: leave this unchanged, clear it, or set it. A nil *nullableString with
+// `omitempty` is omitted, a non-nil one holding a nil value marshals as an
+// explicit null, and one holding a value marshals as that value.
+//
+// Only fields the API actually lets a caller clear need this. Everywhere else a
+// *string is enough, because "omitted" and "null" mean the same thing on a
+// create and the API rejects the null on an update.
+type nullableString struct {
+	value *string
+}
+
+func (n nullableString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(n.value)
+}
+
+// clearedString builds the patch value for a clearable field: nil when the
+// configured value has not changed, an explicit null when it has been removed
+// from the configuration, and the new value otherwise.
+//
+// An unknown plan value is omitted rather than sent. Terraform resolves a
+// configured attribute before it calls Update, so this should not arise, but
+// stringPointer maps unknown to nil and sending that would clear a field the
+// configuration never asked to clear.
+func clearedString(plan, state types.String) *nullableString {
+	if plan.IsUnknown() || plan.Equal(state) {
+		return nil
+	}
+	return &nullableString{value: stringPointer(plan)}
+}
+
 func boolPointer(value types.Bool) *bool {
 	if value.IsNull() || value.IsUnknown() {
 		return nil
@@ -528,6 +559,16 @@ func (e *apiError) issue() string {
 		return ""
 	}
 	return e.Details[0].Issue
+}
+
+// field returns the first detail's field name, which is what a caller branches
+// on when a code covers several situations that share one issue. Empty when the
+// API sent no details.
+func (e *apiError) field() string {
+	if len(e.Details) == 0 {
+		return ""
+	}
+	return e.Details[0].Field
 }
 
 func (e *apiError) Error() string {
