@@ -26,13 +26,20 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `make test-databricks` - Databricks connection tests; needs a working Databricks service principal, so it is excluded from `make test`
 - `make test-bigquery` - BigQuery connection tests; needs a working GCP project and service account, so it is excluded from `make test`
 - `make test-aws` - AWS connection tests; needs an AWS payer account with a working CUR delivery, so it is excluded from `make test`
+- `make test-connections` - All four connection suites
+- `make test-sweep` - Delete connections a failed run left attached to the organization
 - `make test-clean` - Clean up test state files
 
 **Test Requirements**: Tests require environment variables:
 ```bash
 export TF_VAR_select_api_key="your-api-key"
 export TF_VAR_select_organization_id="your-org-id"
+# Optional; defaults to a backend on http://localhost:8000
+export TF_VAR_select_api_url="https://api.select.dev"
 ```
+
+The connection suites need credentials for the system being connected as well.
+See `tests/README.md` for the full list and for how CI supplies them.
 
 ### Documentation
 - `make docs` - Generate provider documentation from schema (requires build + dev overrides)
@@ -194,3 +201,7 @@ Tests use Terraform's native testing framework (`terraform test`). Each test cas
 4. Cleans up resources
 
 Tests run against the live SELECT API and create real resources. Always run `make test-clean` after test failures to prevent orphaned resources.
+
+The connection suites go further: each one drives a full create → update → delete cycle, with the delete written as a run block that flips the suite's `enable_*` variable to `false`. Terraform's own teardown would destroy the resource anyway, but it asserts nothing and swallows what it cannot remove, so a delete the API refuses has to fail the test rather than pass quietly. When one of these fails partway it leaves a connection attached to the organization, and the name is then in use for good — `make test-sweep` clears it.
+
+CI runs the four suites from `.github/workflows/e2e.yaml` against the deployed API with a dedicated test organization, taking credentials from GitHub secrets. Because one organization backs every run, the workflow serializes on a `concurrency` group and names each connection after the run id.

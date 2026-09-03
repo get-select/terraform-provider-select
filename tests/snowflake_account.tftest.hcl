@@ -6,20 +6,15 @@
 # SELECT validate the configuration against Snowflake for real: the credentials
 # have to work, and the account is added to and removed from the target
 # organization. Run with `make test-snowflake` once the TF_VAR_snowflake_*
-# variables are set.
+# variables are set, or let CI run it from the credentials it holds as secrets.
 #
 # The credential and field-combination rules are checked before anything reaches
 # the API and are covered by the Go tests in internal/, so they are not repeated
 # here. What only a live run can show is that the account round-trips: that the
-# API's own values land in state, and that an update is an update rather than a
-# replacement.
-#
-# Commented out for now: wiring this into CI needs a dedicated Snowflake test
-# account and credentials stored as CI secrets, which is being done as a
-# separate follow-up. `make test-snowflake` remains available for a manual
-# local run against your own test account in the meantime.
+# API's own values land in state, that an update is an update rather than a
+# replacement, and that removing the account reaches the API rather than only
+# leaving state.
 
-/*
 variables {
   enable_snowflake_account_tests = true
 }
@@ -74,17 +69,17 @@ run "update_snowflake_account" {
   command = apply
 
   variables {
-    snowflake_account_name = "terraform-test-account-renamed"
-    snowflake_warehouse    = "SELECT_WH_ALT"
+    snowflake_account_name_suffix = "-renamed"
+    snowflake_use_alt_warehouse   = true
   }
 
   assert {
-    condition     = select_snowflake_account.test[0].name == "terraform-test-account-renamed"
+    condition     = select_snowflake_account.test[0].name == "${var.snowflake_account_name}-renamed"
     error_message = "Snowflake account name should reflect the update"
   }
 
   assert {
-    condition     = select_snowflake_account.test[0].warehouse == "SELECT_WH_ALT"
+    condition     = select_snowflake_account.test[0].warehouse == var.snowflake_warehouse_alt
     error_message = "Warehouse should reflect the update"
   }
 
@@ -105,9 +100,9 @@ run "disable_sync" {
   command = apply
 
   variables {
-    snowflake_account_name = "terraform-test-account-renamed"
-    snowflake_warehouse    = "SELECT_WH_ALT"
-    snowflake_sync_enabled = false
+    snowflake_account_name_suffix = "-renamed"
+    snowflake_use_alt_warehouse   = true
+    snowflake_sync_enabled        = false
   }
 
   assert {
@@ -115,4 +110,25 @@ run "disable_sync" {
     error_message = "sync_enabled should reflect the update"
   }
 }
-*/
+
+# Taking the account out of the configuration removes it from the organization.
+# Terraform tears down whatever is left at the end of the file either way, but
+# that teardown asserts nothing and swallows what it cannot remove; doing it as a
+# run block means a delete the API refuses fails the test. It matters more here
+# than elsewhere: an account left attached blocks the next run, since the same
+# identifier cannot be added to the organization twice.
+run "delete_snowflake_account" {
+  command = apply
+
+  variables {
+    snowflake_account_name_suffix  = "-renamed"
+    snowflake_use_alt_warehouse    = true
+    snowflake_sync_enabled         = false
+    enable_snowflake_account_tests = false
+  }
+
+  assert {
+    condition     = length(select_snowflake_account.test) == 0
+    error_message = "The account should have been removed from the organization"
+  }
+}

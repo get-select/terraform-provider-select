@@ -22,6 +22,15 @@ variable "select_organization_id" {
   type        = string
 }
 
+# Which SELECT API the tests apply against. A local run defaults to a backend on
+# localhost; CI points this at the deployed API. Switching between them is an
+# environment variable rather than an edit here.
+variable "select_api_url" {
+  description = "Base URL of the SELECT API the tests run against"
+  type        = string
+  default     = "http://localhost:8000"
+}
+
 # Test-specific variables with defaults
 variable "usage_group_set_name" {
   description = "Name for the usage group set"
@@ -96,6 +105,15 @@ variable "snowflake_account_name" {
   default     = "terraform-test-account"
 }
 
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "snowflake_account_name_suffix" {
+  description = "Appended to the Snowflake account name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
+}
+
 variable "snowflake_username" {
   description = "Snowflake user SELECT connects as"
   type        = string
@@ -119,6 +137,21 @@ variable "snowflake_warehouse" {
   description = "Snowflake warehouse SELECT runs its queries on"
   type        = string
   default     = "SELECT_WH"
+}
+
+# The update test switches warehouses, so the role needs usage on a second one.
+variable "snowflake_warehouse_alt" {
+  description = "A second warehouse the update test switches the account to"
+  type        = string
+  default     = "SELECT_WH_ALT"
+}
+
+# Which of the two the account uses. A flag rather than the warehouse name for
+# the same reason as the name suffixes above: a run block sets literals only.
+variable "snowflake_use_alt_warehouse" {
+  description = "Whether to point the account at snowflake_warehouse_alt"
+  type        = bool
+  default     = false
 }
 
 variable "snowflake_sync_enabled" {
@@ -149,6 +182,15 @@ variable "databricks_connection_name" {
   description = "Display name for the Databricks connection in SELECT"
   type        = string
   default     = "terraform-test-databricks-connection"
+}
+
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "databricks_connection_name_suffix" {
+  description = "Appended to the Databricks connection name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
 }
 
 variable "databricks_account_id" {
@@ -206,6 +248,15 @@ variable "bigquery_connection_name" {
   default     = "terraform-test-bigquery-connection"
 }
 
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "bigquery_connection_name_suffix" {
+  description = "Appended to the BigQuery connection name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
+}
+
 variable "bigquery_gcp_project_id" {
   description = "GCP project SELECT reads BigQuery usage and spend from"
   type        = string
@@ -252,6 +303,15 @@ variable "aws_connection_name" {
   description = "Display name for the AWS connection in SELECT"
   type        = string
   default     = "terraform-test-aws-connection"
+}
+
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "aws_connection_name_suffix" {
+  description = "Appended to the AWS connection name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
 }
 
 variable "aws_payer_account_id" {
@@ -301,8 +361,7 @@ variable "aws_sync_enabled" {
 provider "select" {
   api_key         = var.select_api_key
   organization_id = var.select_organization_id
-  # You could move this to a variable if you wanted to run tests against staging or something
-  select_api_url = "http://localhost:8000"
+  select_api_url  = var.select_api_url
 }
 
 # Usage group set with SELECT organization scope
@@ -359,7 +418,7 @@ resource "select_snowflake_account" "test" {
   count = var.enable_snowflake_account_tests ? 1 : 0
 
   id   = var.snowflake_account_id
-  name = var.snowflake_account_name
+  name = "${var.snowflake_account_name}${var.snowflake_account_name_suffix}"
 
   credentials = {
     authentication_method = "key_pair"
@@ -368,7 +427,7 @@ resource "select_snowflake_account" "test" {
   }
 
   role                            = var.snowflake_role
-  warehouse                       = var.snowflake_warehouse
+  warehouse                       = var.snowflake_use_alt_warehouse ? var.snowflake_warehouse_alt : var.snowflake_warehouse
   export_storage_integration_name = var.snowflake_export_storage_integration_name
   sync_enabled                    = var.snowflake_sync_enabled
 }
@@ -380,7 +439,7 @@ resource "select_snowflake_account" "test" {
 resource "select_databricks_connection" "test" {
   count = var.enable_databricks_connection_tests ? 1 : 0
 
-  name = var.databricks_connection_name
+  name = "${var.databricks_connection_name}${var.databricks_connection_name_suffix}"
 
   databricks_account_id = var.databricks_account_id
   primary_workspace_url = var.databricks_workspace_url
@@ -400,7 +459,7 @@ resource "select_databricks_connection" "test" {
 resource "select_bigquery_connection" "test" {
   count = var.enable_bigquery_connection_tests ? 1 : 0
 
-  name = var.bigquery_connection_name
+  name = "${var.bigquery_connection_name}${var.bigquery_connection_name_suffix}"
 
   gcp_project_id      = var.bigquery_gcp_project_id
   bigquery_dataset_id = var.bigquery_dataset_id
@@ -416,7 +475,7 @@ resource "select_bigquery_connection" "test" {
 resource "select_aws_connection" "test" {
   count = var.enable_aws_connection_tests ? 1 : 0
 
-  name = var.aws_connection_name
+  name = "${var.aws_connection_name}${var.aws_connection_name_suffix}"
 
   payer_account_id = var.aws_payer_account_id
   s3_bucket        = var.aws_s3_bucket
@@ -462,4 +521,21 @@ output "team_usage_group_set_id" {
 
 output "select_org_usage_group_set_id" {
   value = select_usage_group_set.test_select_org.id
+}
+
+# The ids SELECT assigned, so a later run block can assert an update kept the
+# same resource. one() returns null rather than failing when the corresponding
+# enable_* variable is off and the resource has no instances. Snowflake needs no
+# equivalent: its id is the account identifier the configuration supplies, so the
+# test compares against that directly.
+output "databricks_connection_id" {
+  value = one(select_databricks_connection.test[*].id)
+}
+
+output "bigquery_connection_id" {
+  value = one(select_bigquery_connection.test[*].id)
+}
+
+output "aws_connection_id" {
+  value = one(select_aws_connection.test[*].id)
 }

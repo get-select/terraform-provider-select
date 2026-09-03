@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# Checks that need no credentials: the provider builds from the current OpenAPI
+# specs, the Go glue passes its unit tests, and the test configuration is valid.
+#
+# The end-to-end tests, which manage real connections, live in e2e.yaml.
+name: Pull Request
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: ./.github/actions/setup-provider
+
+      # Request payloads, type conversion, and the codegen post-processor. No
+      # API and no credentials.
+      - name: Run Go tests
+        run: make test-go
+
+      # Catches drift between the generated schema and tests/main.tf — an
+      # attribute a resource no longer has, a type that changed shape.
+      #
+      # It does not reach the .tftest.hcl files: `terraform validate` parses test
+      # files but never evaluates their assertions, so a condition naming an
+      # attribute that no longer exists passes here and only fails when e2e.yaml
+      # actually runs it.
+      - name: Validate test configuration
+        run: make test-validate

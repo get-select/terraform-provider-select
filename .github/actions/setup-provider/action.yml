@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: MPL-2.0
+
+name: Setup provider
+description: >-
+  Build the provider from the OpenAPI specs and point Terraform at the local
+  binary. Shared by the PR checks and the end-to-end tests, which need the same
+  toolchain and the same dev overrides.
+
+inputs:
+  terraform-version:
+    description: Terraform version to install
+    required: false
+    default: "1.12.0"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      with:
+        go-version-file: 'go.mod'
+        cache: true
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+
+    - name: Setup Go environment
+      shell: bash
+      run: |
+        echo "GOPATH=$HOME/go" >> $GITHUB_ENV
+        echo "GOBIN=$HOME/go/bin" >> $GITHUB_ENV
+        echo "$HOME/go/bin" >> $GITHUB_PATH
+        mkdir -p $HOME/go/bin
+
+    - name: Cache Terraform plugin generators
+      id: cache-terraform-plugins
+      uses: actions/cache@v4
+      with:
+        path: ~/go/bin
+        key: ${{ runner.os }}-terraform-plugins-go-${{ hashFiles('go.mod') }}-v1
+        restore-keys: |
+          ${{ runner.os }}-terraform-plugins-go-
+
+    - name: Install Terraform plugin generators
+      if: steps.cache-terraform-plugins.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        go install github.com/hashicorp/terraform-plugin-codegen-openapi/cmd/tfplugingen-openapi@latest
+        go install github.com/hashicorp/terraform-plugin-codegen-framework/cmd/tfplugingen-framework@latest
+
+    # internal/provider is git-ignored and generated from the two OpenAPI
+    # documents, so nothing builds until this runs.
+    - name: Generate provider code
+      shell: bash
+      run: make codegen
+
+    - name: Build and install the provider
+      shell: bash
+      run: make install
+
+    # Writes .terraformrc, which every terraform invocation in the Makefile
+    # points at through TF_CLI_CONFIG_FILE so it resolves the provider from
+    # $GOBIN rather than the registry.
+    - name: Configure dev overrides
+      shell: bash
+      run: make setup-dev-overrides

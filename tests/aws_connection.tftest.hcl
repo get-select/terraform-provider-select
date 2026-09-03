@@ -6,21 +6,16 @@
 # SELECT read the Cost and Usage Report out of S3 for real: the bucket, prefix
 # and IAM user have to work, and the connection is added to and removed from the
 # target organization. Run with `make test-aws` once the TF_VAR_aws_* variables
-# are set.
+# are set, or let CI run it from the credentials it holds as secrets.
 #
 # The payload-shaping rules — which fields a patch omits, and that clearing
 # s3_prefix is the one explicit null the API accepts — are settled before
 # anything reaches the API and are covered by the Go tests in internal/, so they
 # are not repeated here. What only a live run can show is that the connection
-# round-trips: that the values SELECT records land in state, and that a rename is
-# an update rather than a replacement.
-#
-# Commented out for now: wiring this into CI needs a dedicated AWS payer account
-# and CUR bucket stored as CI secrets, which is being done as a separate
-# follow-up. `make test-aws` remains available for a manual local run against
-# your own test account in the meantime.
+# round-trips: that the values SELECT records land in state, that a rename is an
+# update rather than a replacement, and that removing the connection reaches the
+# API rather than only leaving state.
 
-/*
 variables {
   enable_aws_connection_tests = true
 }
@@ -74,16 +69,16 @@ run "rename_aws_connection" {
   command = apply
 
   variables {
-    aws_connection_name = "terraform-test-aws-connection-renamed"
+    aws_connection_name_suffix = "-renamed"
   }
 
   assert {
-    condition     = select_aws_connection.test[0].name == "terraform-test-aws-connection-renamed"
+    condition     = select_aws_connection.test[0].name == "${var.aws_connection_name}-renamed"
     error_message = "The connection should have been renamed in place"
   }
 
   assert {
-    condition     = select_aws_connection.test[0].id != ""
+    condition     = select_aws_connection.test[0].id == run.create_aws_connection.aws_connection_id
     error_message = "A rename should not replace the connection"
   }
 }
@@ -95,8 +90,8 @@ run "clear_s3_prefix" {
   command = apply
 
   variables {
-    aws_connection_name = "terraform-test-aws-connection-renamed"
-    aws_s3_prefix       = null
+    aws_connection_name_suffix = "-renamed"
+    aws_s3_prefix              = null
   }
 
   assert {
@@ -111,9 +106,9 @@ run "disable_sync" {
   command = apply
 
   variables {
-    aws_connection_name = "terraform-test-aws-connection-renamed"
-    aws_s3_prefix       = null
-    aws_sync_enabled    = false
+    aws_connection_name_suffix = "-renamed"
+    aws_s3_prefix              = null
+    aws_sync_enabled           = false
   }
 
   assert {
@@ -121,4 +116,23 @@ run "disable_sync" {
     error_message = "sync_enabled should follow the configuration"
   }
 }
-*/
+
+# Taking the connection out of the configuration destroys it. Terraform tears
+# down whatever is left at the end of the file either way, but that teardown
+# asserts nothing and swallows what it cannot remove; doing it as a run block
+# means a delete the API refuses fails the test.
+run "delete_aws_connection" {
+  command = apply
+
+  variables {
+    aws_connection_name_suffix  = "-renamed"
+    aws_s3_prefix               = null
+    aws_sync_enabled            = false
+    enable_aws_connection_tests = false
+  }
+
+  assert {
+    condition     = length(select_aws_connection.test) == 0
+    error_message = "The connection should have been destroyed"
+  }
+}

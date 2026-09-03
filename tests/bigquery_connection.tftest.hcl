@@ -6,20 +6,16 @@
 # SELECT validate the configuration against BigQuery for real: the GCP project
 # and service account have to work, and the connection is added to and removed
 # from the target organization. Run with `make test-bigquery` once the
-# TF_VAR_bigquery_* variables are set.
+# TF_VAR_bigquery_* variables are set, or let CI run it from the credentials it
+# holds as secrets.
 #
-# The is_doit field-combination rule and the payload-shaping rules are checked
-# before anything reaches the API and are covered by the Go tests in internal/,
-# so they are not repeated here. What only a live run can show is that the
-# connection round-trips: that the values SELECT discovers land in state, and
-# that a rename is an update rather than a replacement.
-#
-# Commented out for now: wiring this into CI needs a dedicated GCP project and a
-# service account stored as CI secrets, which is being done as a separate
-# follow-up. `make test-bigquery` remains available for a manual local run
-# against your own test project in the meantime.
+# The payload-shaping rules are settled before anything reaches the API and are
+# covered by the Go tests in internal/, so they are not repeated here. What only
+# a live run can show is that the connection round-trips: that the values SELECT
+# discovers land in state, that a rename is an update rather than a replacement,
+# and that removing the connection reaches the API rather than only leaving
+# state.
 
-/*
 variables {
   enable_bigquery_connection_tests = true
 }
@@ -50,17 +46,17 @@ run "create_bigquery_connection" {
   }
 
   assert {
+    condition     = select_bigquery_connection.test[0].connection_id != ""
+    error_message = "The parent connection ID should be set"
+  }
+
+  assert {
     condition     = select_bigquery_connection.test[0].create_time != ""
     error_message = "Create time should be set after creation"
   }
 
-  # The schema declares the API's own defaults, so an unset value must resolve at
+  # The schema declares the API's own default, so an unset value must resolve at
   # plan time rather than staying unknown until after apply.
-  assert {
-    condition     = select_bigquery_connection.test[0].is_doit == false
-    error_message = "is_doit should default to false"
-  }
-
   assert {
     condition     = select_bigquery_connection.test[0].query_sanitization_enabled == false
     error_message = "query_sanitization_enabled should default to false"
@@ -73,16 +69,16 @@ run "rename_bigquery_connection" {
   command = apply
 
   variables {
-    bigquery_connection_name = "terraform-test-bigquery-connection-renamed"
+    bigquery_connection_name_suffix = "-renamed"
   }
 
   assert {
-    condition     = select_bigquery_connection.test[0].name == "terraform-test-bigquery-connection-renamed"
+    condition     = select_bigquery_connection.test[0].name == "${var.bigquery_connection_name}-renamed"
     error_message = "The connection should have been renamed in place"
   }
 
   assert {
-    condition     = select_bigquery_connection.test[0].id != ""
+    condition     = select_bigquery_connection.test[0].id == run.create_bigquery_connection.bigquery_connection_id
     error_message = "A rename should not replace the connection"
   }
 }
@@ -93,8 +89,8 @@ run "disable_sync" {
   command = apply
 
   variables {
-    bigquery_connection_name = "terraform-test-bigquery-connection-renamed"
-    bigquery_sync_enabled    = false
+    bigquery_connection_name_suffix = "-renamed"
+    bigquery_sync_enabled           = false
   }
 
   assert {
@@ -102,4 +98,22 @@ run "disable_sync" {
     error_message = "sync_enabled should follow the configuration"
   }
 }
-*/
+
+# Taking the connection out of the configuration destroys it. Terraform tears
+# down whatever is left at the end of the file either way, but that teardown
+# asserts nothing and swallows what it cannot remove; doing it as a run block
+# means a delete the API refuses fails the test.
+run "delete_bigquery_connection" {
+  command = apply
+
+  variables {
+    bigquery_connection_name_suffix  = "-renamed"
+    bigquery_sync_enabled            = false
+    enable_bigquery_connection_tests = false
+  }
+
+  assert {
+    condition     = length(select_bigquery_connection.test) == 0
+    error_message = "The connection should have been destroyed"
+  }
+}
