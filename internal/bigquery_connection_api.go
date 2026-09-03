@@ -176,6 +176,12 @@ func applyBigQueryConnectionResponse(
 	model.LastSuccessfulSyncTime = stringValue(connection.LastSuccessfulSyncTime)
 	model.CreateTime = types.StringValue(connection.CreateTime)
 	model.UpdateTime = types.StringValue(connection.UpdateTime)
+	// Never read from the API (see bigQueryConnectionResponse's own comment) and
+	// always null for a connection managed by this resource, per the schema's own
+	// description — but a computed attribute still has to resolve to something
+	// after apply, or Terraform's post-apply consistency check fails the whole
+	// operation, exactly as it did before this line existed.
+	model.DoitBillingStatus = types.StringNull()
 
 	return diags
 }
