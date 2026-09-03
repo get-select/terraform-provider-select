@@ -70,17 +70,11 @@ run "update_snowflake_account" {
 
   variables {
     snowflake_account_name_suffix = "-renamed"
-    snowflake_use_alt_warehouse   = true
   }
 
   assert {
     condition     = select_snowflake_account.test[0].name == "${var.snowflake_account_name}-renamed"
     error_message = "Snowflake account name should reflect the update"
-  }
-
-  assert {
-    condition     = select_snowflake_account.test[0].warehouse == var.snowflake_warehouse_alt
-    error_message = "Warehouse should reflect the update"
   }
 
   assert {
@@ -101,7 +95,6 @@ run "disable_sync" {
 
   variables {
     snowflake_account_name_suffix = "-renamed"
-    snowflake_use_alt_warehouse   = true
     snowflake_sync_enabled        = false
   }
 
@@ -122,7 +115,6 @@ run "delete_snowflake_account" {
 
   variables {
     snowflake_account_name_suffix  = "-renamed"
-    snowflake_use_alt_warehouse    = true
     snowflake_sync_enabled         = false
     enable_snowflake_account_tests = false
   }

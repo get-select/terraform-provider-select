@@ -139,21 +139,6 @@ variable "snowflake_warehouse" {
   default     = "SELECT_WH"
 }
 
-# The update test switches warehouses, so the role needs usage on a second one.
-variable "snowflake_warehouse_alt" {
-  description = "A second warehouse the update test switches the account to"
-  type        = string
-  default     = "SELECT_WH_ALT"
-}
-
-# Which of the two the account uses. A flag rather than the warehouse name for
-# the same reason as the name suffixes above: a run block sets literals only.
-variable "snowflake_use_alt_warehouse" {
-  description = "Whether to point the account at snowflake_warehouse_alt"
-  type        = bool
-  default     = false
-}
-
 variable "snowflake_sync_enabled" {
   description = "Whether SELECT syncs data for the test account"
   type        = bool
@@ -427,7 +412,7 @@ resource "select_snowflake_account" "test" {
   }
 
   role                            = var.snowflake_role
-  warehouse                       = var.snowflake_use_alt_warehouse ? var.snowflake_warehouse_alt : var.snowflake_warehouse
+  warehouse                       = var.snowflake_warehouse
   export_storage_integration_name = var.snowflake_export_storage_integration_name
   sync_enabled                    = var.snowflake_sync_enabled
 }

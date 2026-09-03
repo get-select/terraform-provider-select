@@ -67,10 +67,9 @@ are in the Go tests under `internal/`, where they cost nothing to run.
 
 One thing to know before adding a run block: Terraform exposes `var.*` to an
 assertion's condition but **not** inside a run's own `variables` block, so a run
-can only assign literals. That is why renaming goes through a
-`*_name_suffix` variable and the alternate warehouse through
-`snowflake_use_alt_warehouse` — the value is composed in `main.tf`, and the run
-block just flips the switch.
+can only assign literals. That is why renaming goes through a `*_name_suffix`
+variable rather than building the new name inline — the value is composed in
+`main.tf`, and the run block just supplies the suffix.
 
 ## Credentials
 
@@ -80,18 +79,14 @@ variables for the one you want to run.
 
 | Suite | Variables |
 |---|---|
-| Snowflake | `snowflake_account_id`, `snowflake_account_name`, `snowflake_username`, `snowflake_private_key`, `snowflake_role`, `snowflake_warehouse`, `snowflake_warehouse_alt`, `snowflake_export_storage_integration_name` |
+| Snowflake | `snowflake_account_id`, `snowflake_account_name`, `snowflake_username`, `snowflake_private_key`, `snowflake_role`, `snowflake_warehouse`, `snowflake_export_storage_integration_name` |
 | Databricks | `databricks_connection_name`, `databricks_account_id`, `databricks_workspace_url`, `databricks_warehouse_id`, `databricks_client_id`, `databricks_client_secret` |
 | BigQuery | `bigquery_connection_name`, `bigquery_gcp_project_id`, `bigquery_dataset_id`, `bigquery_billing_account_id`, `bigquery_service_account` |
 | AWS | `aws_connection_name`, `aws_payer_account_id`, `aws_s3_bucket`, `aws_s3_prefix`, `aws_region`, `aws_access_key_id`, `aws_secret_access_key` |
 
-Two of these are not obvious:
-
-- **`snowflake_warehouse_alt`** is a second warehouse the update test switches the
-  account to. The role needs usage on both.
-- **`bigquery_service_account`** is not a credential this test holds. Access comes
-  from the SELECT backend impersonating that service account, so the grant lives
-  in the target GCP project's IAM, not here.
+One of these is not obvious: **`bigquery_service_account`** is not a credential
+this test holds. Access comes from the SELECT backend impersonating that service
+account, so the grant lives in the target GCP project's IAM, not here.
 
 ## In CI
 

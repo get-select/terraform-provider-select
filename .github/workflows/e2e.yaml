@@ -89,7 +89,6 @@ jobs:
       TF_VAR_snowflake_private_key: ${{ secrets.E2E_CREATE_SNOWFLAKE_ACCOUNT_CONNECTION_PRIVATE_KEY }}
       TF_VAR_snowflake_role: ${{ secrets.TF_E2E_SNOWFLAKE_ROLE }}
       TF_VAR_snowflake_warehouse: ${{ secrets.TF_E2E_SNOWFLAKE_WAREHOUSE }}
-      TF_VAR_snowflake_warehouse_alt: ${{ secrets.TF_E2E_SNOWFLAKE_WAREHOUSE_ALT }}
       TF_VAR_snowflake_export_storage_integration_name: ${{ secrets.TF_E2E_SNOWFLAKE_STORAGE_INTEGRATION }}
 
       # Databricks.

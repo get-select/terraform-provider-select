@@ -111,8 +111,7 @@ test-all:
 #   TF_VAR_select_organization_id
 #   TF_VAR_snowflake_account_id, TF_VAR_snowflake_username,
 #   TF_VAR_snowflake_private_key, TF_VAR_snowflake_role,
-#   TF_VAR_snowflake_warehouse, TF_VAR_snowflake_warehouse_alt,
-#   TF_VAR_snowflake_export_storage_integration_name
+#   TF_VAR_snowflake_warehouse, TF_VAR_snowflake_export_storage_integration_name
 test-snowflake:
 	@echo "Running Snowflake account tests against a real Snowflake connection..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test snowflake_account.tftest.hcl
