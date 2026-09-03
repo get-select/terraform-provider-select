@@ -49,6 +49,8 @@ resources:
       # has_manage_warehouses_grant and mode_credentials_configured, which an
       # update can genuinely change, and etag and the timestamps, which change by
       # design.
+      connection_id:
+        use_state_for_unknown: true
       snowflake_organization_name:
         use_state_for_unknown: true
       snowflake_account_name:

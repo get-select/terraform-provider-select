@@ -108,6 +108,7 @@ type snowflakeAccountResponse struct {
 	Id                                     string    `json:"id"`
 	Etag                                   string    `json:"etag"`
 	Name                                   string    `json:"name"`
+	ConnectionId                           string    `json:"connection_id"`
 	SnowflakeOrganizationName              string    `json:"snowflake_organization_name"`
 	SnowflakeAccountName                   string    `json:"snowflake_account_name"`
 	Locator                                *string   `json:"locator"`
@@ -258,6 +259,7 @@ func applySnowflakeAccountResponse(
 	model.Id = types.StringValue(account.Id)
 	model.Etag = types.StringValue(account.Etag)
 	model.Name = types.StringValue(account.Name)
+	model.ConnectionId = types.StringValue(account.ConnectionId)
 	model.SnowflakeOrganizationName = types.StringValue(account.SnowflakeOrganizationName)
 	model.SnowflakeAccountName = types.StringValue(account.SnowflakeAccountName)
 	model.Locator = stringValue(account.Locator)

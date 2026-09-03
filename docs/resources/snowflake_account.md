@@ -84,6 +84,7 @@ resource "select_snowflake_account" "analytics" {
 
 - `account_region` (String) The Snowflake region the account is hosted in.
 - `added_by_email` (String) Email address of the user who added the account.
+- `connection_id` (String) Identifier of the underlying connection this account reads through.
 - `create_time` (String) When the account was added to SELECT, as an RFC 3339 UTC timestamp.
 - `etag` (String) Opaque strong ETag for this account. Sent as `If-Match` on updates and deletes so a change made outside Terraform cannot be silently overwritten.
 - `has_data_share` (Boolean) Whether the account reads SELECT's data share.
