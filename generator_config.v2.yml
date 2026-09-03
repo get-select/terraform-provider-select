@@ -96,6 +96,14 @@ resources:
       path: /bigquery-connections/{bigquery_connection_id}
       method: DELETE
     schema:
+      # is_doit is out of scope for this resource: a DoiT-managed connection is
+      # never created or managed through Terraform (creating one needs a
+      # signed-in user's credential, which this provider never holds, and in
+      # practice neither DoiT staff nor customers manage one this way). See
+      # generator_overrides.v2.yml for what that implies for
+      # bigquery_dataset_id and billing_account_id.
+      ignores:
+        - is_doit
       attributes:
         aliases:
           bigquery_connection_id: id
@@ -108,11 +116,20 @@ resources:
             description: >-
               Opaque strong ETag for this connection. Sent as `If-Match` on updates and
               deletes so a change made outside Terraform cannot be silently overwritten.
-          is_doit:
+          # The API's own descriptions for these two mention is_doit, which this
+          # resource has no attribute for (see the ignores entry above) — a
+          # reference the reader would have no way to look up. Reworded to drop
+          # it rather than leave a dangling mention of a hidden flag.
+          bigquery_dataset_id:
             description: >-
-              Set this when the project's GCP billing account is managed by DoiT as a
-              resale customer, so SELECT reads its spend from DoiT's billing data instead
-              of an export in your own dataset. Cannot be changed once the connection is
-              added. Creating a connection with this set requires a user credential
-              rather than an API key, so it has to be added in the SELECT UI and brought
-              under Terraform with `terraform import`.
+              The BigQuery dataset holding the project's billing and pricing exports.
+              Letters, digits and underscores only.
+          billing_account_id:
+            description: >-
+              The Cloud Billing account the exports belong to, in `XXXXXX-XXXXXX-XXXXXX`
+              form, case-insensitive.
+          doit_billing_status:
+            description: >-
+              Always null for a connection managed by this resource. Only set on a
+              DoiT-managed connection, which is out of this resource's scope — see
+              "DoiT-managed connections are out of scope" below.

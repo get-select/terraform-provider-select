@@ -29,9 +29,9 @@ A connection reached without service account impersonation has no `service_accou
 
 ## Additional Information
 
-### DoiT-managed connections must be created in the SELECT UI
+### DoiT-managed connections are out of scope
 
-Setting `is_doit = true` tells SELECT to read the project's spend from DoiT's own billing data instead of an export in your project, and it requires `bigquery_dataset_id` and `billing_account_id` to be omitted rather than set. Adding a connection like this needs a signed-in user's credential, which an API key is not — so `terraform apply` on a new `is_doit = true` resource fails with a `403`. Add it in the SELECT UI instead, then bring it under Terraform with `terraform import`; every other operation, including toggling `is_doit`-adjacent fields like `name` and `sync_enabled`, works normally with an API key from then on.
+SELECT can read a project's spend from DoiT's own billing data instead of an export in your project, but adding a connection like that needs a signed-in user's credential, which an API key is not. This resource has no `is_doit` attribute and cannot create, import, or manage a DoiT-managed connection; `bigquery_dataset_id` and `billing_account_id` are always required, matching an ordinary customer-owned connection.
 
 ### Creating a connection validates it against BigQuery
 
@@ -48,10 +48,6 @@ A successful revalidation re-resolves `gcp_organization_id`, `gcp_organization_n
 ### One connection per GCP project
 
 SELECT allows one connection per GCP project; a second one for the same project is refused with a conflict naming it. Bring the existing connection under Terraform with `terraform import` instead of adding another.
-
-### `is_doit` cannot be changed
-
-Whether a connection is DoiT-managed is fixed when it is added. Changing it forces Terraform to destroy the connection and create a new one, which starts the project's usage history over — and since a `true` value can only be created in the SELECT UI, that replacement is also not something `terraform apply` alone can carry out.
 
 ### `billing_account_id` is stored upper case
 

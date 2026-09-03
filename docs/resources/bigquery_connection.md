@@ -12,9 +12,8 @@ This resource is backed by SELECT's v2 API. The `api_key` configured on the prov
 ## Example Usage
 
 ```terraform
-# A customer-owned connection: SELECT reads the project's billing and pricing
-# export from a dataset in the project itself, impersonating a service account
-# with read access to it.
+# SELECT reads the project's billing and pricing export from a dataset in the
+# project itself, impersonating a service account with read access to it.
 resource "select_bigquery_connection" "production" {
   name = "Acme Production"
 
@@ -22,20 +21,6 @@ resource "select_bigquery_connection" "production" {
   bigquery_dataset_id = "billing_export"
   billing_account_id  = "012345-6789AB-CDEF01"
   service_account     = "select@acme-prod.iam.gserviceaccount.com"
-}
-
-# A DoiT-managed connection reads DoiT's own billing data instead, so
-# bigquery_dataset_id and billing_account_id are omitted rather than set. Adding
-# one with is_doit = true needs a signed-in user, not an API key — this
-# provider only ever holds an API key, so a connection like this has to be
-# created in the SELECT UI and brought under Terraform with `terraform import`
-# rather than created here.
-resource "select_bigquery_connection" "doit_managed" {
-  name = "Acme DoiT Reseller"
-
-  gcp_project_id  = "acme-doit"
-  service_account = "select@acme-doit.iam.gserviceaccount.com"
-  is_doit         = true
 }
 ```
 
@@ -50,17 +35,17 @@ resource "select_bigquery_connection" "doit_managed" {
 
 ### Optional
 
-- `bigquery_dataset_id` (String) The BigQuery dataset holding the project's billing and pricing exports. Letters, digits and underscores only. Required when `is_doit` is false, and must be omitted when it is true.
-- `billing_account_id` (String) The Cloud Billing account the exports belong to, in `XXXXXX-XXXXXX-XXXXXX` form, case-insensitive. Required when `is_doit` is false, and must be omitted when it is true.
-- `is_doit` (Boolean) Set this when the project's GCP billing account is managed by DoiT as a resale customer, so SELECT reads its spend from DoiT's billing data instead of an export in your own dataset. Cannot be changed once the connection is added. Creating a connection with this set requires a user credential rather than an API key, so it has to be added in the SELECT UI and brought under Terraform with `terraform import`.
+- `bigquery_dataset_id` (String) The BigQuery dataset holding the project's billing and pricing exports. Letters, digits and underscores only.
+- `billing_account_id` (String) The Cloud Billing account the exports belong to, in `XXXXXX-XXXXXX-XXXXXX` form, case-insensitive.
 - `query_sanitization_enabled` (Boolean) Whether query text is sanitized before SELECT stores it.
 - `sync_enabled` (Boolean) Whether SELECT starts syncing data for this connection.
 
 ### Read-Only
 
 - `added_by_email` (String) Email address of the person who added the connection. Null when it was not added by a person.
+- `connection_id` (String) Identifier of the underlying connection this BigQuery project reads through.
 - `create_time` (String) When the connection was added.
-- `doit_billing_status` (String) Whether SELECT can read this connection's spend from DoiT's billing data. `pending` while SELECT confirms access, `active` once spend is flowing, and `inactive` if it cannot be read — contact support. Null when `is_doit` is false.
+- `doit_billing_status` (String) Always null for a connection managed by this resource. Only set on a DoiT-managed connection, which is out of this resource's scope — see "DoiT-managed connections are out of scope" below.
 - `etag` (String) Opaque strong ETag for this connection. Sent as `If-Match` on updates and deletes so a change made outside Terraform cannot be silently overwritten.
 - `gcp_organization_id` (String) Numeric id of the GCP organization the project belongs to. Null for a standalone project, or when SELECT cannot read the project's ancestry.
 - `gcp_organization_name` (String) Display name of the GCP organization the project belongs to. Null when the name cannot be read even though the id resolved.
@@ -83,9 +68,9 @@ A connection reached without service account impersonation has no `service_accou
 
 ## Additional Information
 
-### DoiT-managed connections must be created in the SELECT UI
+### DoiT-managed connections are out of scope
 
-Setting `is_doit = true` tells SELECT to read the project's spend from DoiT's own billing data instead of an export in your project, and it requires `bigquery_dataset_id` and `billing_account_id` to be omitted rather than set. Adding a connection like this needs a signed-in user's credential, which an API key is not — so `terraform apply` on a new `is_doit = true` resource fails with a `403`. Add it in the SELECT UI instead, then bring it under Terraform with `terraform import`; every other operation, including toggling `is_doit`-adjacent fields like `name` and `sync_enabled`, works normally with an API key from then on.
+SELECT can read a project's spend from DoiT's own billing data instead of an export in your project, but adding a connection like that needs a signed-in user's credential, which an API key is not. This resource has no `is_doit` attribute and cannot create, import, or manage a DoiT-managed connection; `bigquery_dataset_id` and `billing_account_id` are always required, matching an ordinary customer-owned connection.
 
 ### Creating a connection validates it against BigQuery
 
@@ -102,10 +87,6 @@ A successful revalidation re-resolves `gcp_organization_id`, `gcp_organization_n
 ### One connection per GCP project
 
 SELECT allows one connection per GCP project; a second one for the same project is refused with a conflict naming it. Bring the existing connection under Terraform with `terraform import` instead of adding another.
-
-### `is_doit` cannot be changed
-
-Whether a connection is DoiT-managed is fixed when it is added. Changing it forces Terraform to destroy the connection and create a new one, which starts the project's usage history over — and since a `true` value can only be created in the SELECT UI, that replacement is also not something `terraform apply` alone can carry out.
 
 ### `billing_account_id` is stored upper case
 

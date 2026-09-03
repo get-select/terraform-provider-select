@@ -21,13 +21,12 @@ func bigQueryConnection() resource_bigquery_connection.BigqueryConnectionModel {
 		BigqueryDatasetId:        types.StringValue("billing_export"),
 		BillingAccountId:         types.StringValue("0123ab-4567cd-89ef01"),
 		ServiceAccount:           types.StringValue("select@acme-prod.iam.gserviceaccount.com"),
-		IsDoit:                   types.BoolValue(false),
 		SyncEnabled:              types.BoolValue(true),
 		QuerySanitizationEnabled: types.BoolValue(false),
 	}
 }
 
-// A create body has to carry every field the API requires, including the three
+// A create body has to carry every field the API requires, including the two
 // booleans, whose schema defaults mean the plan always has a value for them.
 func TestBigQueryCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 	plan := bigQueryConnection()
@@ -40,7 +39,6 @@ func TestBigQueryCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 		"bigquery_dataset_id":        "billing_export",
 		"billing_account_id":         "0123ab-4567cd-89ef01",
 		"service_account":            "select@acme-prod.iam.gserviceaccount.com",
-		"is_doit":                    false,
 		"sync_enabled":               true,
 		"query_sanitization_enabled": false,
 	} {
@@ -48,25 +46,8 @@ func TestBigQueryCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 			t.Errorf("%s should be %v, got %v", field, expected, payload[field])
 		}
 	}
-}
-
-// A DoiT-managed connection reads DoiT's own billing data, so the API rejects
-// bigquery_dataset_id and billing_account_id even being present, not just set.
-func TestBigQueryCreatePayloadOmitsDatasetAndBillingWhenDoit(t *testing.T) {
-	plan := bigQueryConnection()
-	plan.IsDoit = types.BoolValue(true)
-	plan.BigqueryDatasetId = types.StringNull()
-	plan.BillingAccountId = types.StringNull()
-
-	payload := marshal(t, buildBigQueryConnectionCreate(&plan))
-
-	for _, field := range []string{"bigquery_dataset_id", "billing_account_id"} {
-		if _, present := payload[field]; present {
-			t.Errorf("%s should be omitted on a DoiT-managed create, got %v", field, payload[field])
-		}
-	}
-	if payload["is_doit"] != true {
-		t.Errorf("is_doit should be sent as true, got %v", payload["is_doit"])
+	if _, present := payload["is_doit"]; present {
+		t.Errorf("is_doit is out of this resource's scope and should never be sent, got %v", payload["is_doit"])
 	}
 }
 
@@ -114,10 +95,10 @@ func TestBigQueryUpdatePayloadSendsChangedFields(t *testing.T) {
 	}
 }
 
-// The API rejects null for every patchable field — directly for most of them,
-// and for bigquery_dataset_id/billing_account_id through a check against the
-// connection's stored is_doit — so a patch that clears nothing must contain
-// nothing rather than an explicit null.
+// The API rejects null for every field this resource can patch — this resource
+// never sets is_doit, so bigquery_dataset_id and billing_account_id are always
+// on a non-DoiT connection, where the API refuses to clear either one — so a
+// patch that clears nothing must contain nothing rather than an explicit null.
 func TestBigQueryUpdatePayloadNeverSendsNull(t *testing.T) {
 	state := bigQueryConnection()
 	plan := bigQueryConnection()
@@ -154,7 +135,7 @@ func TestBigQueryApplyResponsePreservesBillingAccountFold(t *testing.T) {
 		GcpOrganizationId:      &orgId,
 		GcpOrganizationName:    &orgName,
 		Regions:                []string{"us-east1"},
-		IsDoit:                 false,
+		ConnectionId:           "9c9c9c9c-0000-1111-2222-333333333333",
 		SyncEnabled:            true,
 		LastSuccessfulSyncTime: &syncTime,
 		CreateTime:             "2026-08-01T00:00:00Z",
@@ -174,6 +155,9 @@ func TestBigQueryApplyResponsePreservesBillingAccountFold(t *testing.T) {
 	}
 	if model.GcpOrganizationId.ValueString() != orgId {
 		t.Errorf("gcp_organization_id should be taken from the response, got %v", model.GcpOrganizationId)
+	}
+	if model.ConnectionId.ValueString() != "9c9c9c9c-0000-1111-2222-333333333333" {
+		t.Errorf("connection_id should be taken from the response, got %v", model.ConnectionId)
 	}
 	if length := len(model.Regions.Elements()); length != 1 {
 		t.Errorf("regions should hold the detected region, got %d", length)
@@ -201,6 +185,7 @@ func TestBigQueryApplyResponseBillingAccountFoldMismatchUsesResponse(t *testing.
 		ServiceAccount:   &serviceAccount,
 		Regions:          []string{},
 		BillingAccountId: strPtr("0123AB-4567CD-89EF01"),
+		ConnectionId:     "9c9c9c9c-0000-1111-2222-333333333333",
 		SyncEnabled:      true,
 		CreateTime:       "2026-08-01T00:00:00Z",
 		UpdateTime:       "2026-08-27T00:00:00Z",
@@ -217,43 +202,6 @@ func TestBigQueryApplyResponseBillingAccountFoldMismatchUsesResponse(t *testing.
 }
 
 func strPtr(s string) *string { return &s }
-
-// bigquery_dataset_id and billing_account_id flip between required and
-// forbidden depending on is_doit, a rule the generated schema cannot express on
-// its own.
-func TestBigQueryValidateConfigDatasetAndBillingRules(t *testing.T) {
-	present := types.StringValue("value")
-	absent := types.StringNull()
-
-	for _, testCase := range []struct {
-		name             string
-		isDoit           types.Bool
-		datasetId        types.String
-		billingAccountId types.String
-		rejected         bool
-	}{
-		{name: "not doit, both present", isDoit: types.BoolValue(false), datasetId: present, billingAccountId: present},
-		{name: "not doit, dataset missing", isDoit: types.BoolValue(false), datasetId: absent, billingAccountId: present, rejected: true},
-		{name: "not doit, billing missing", isDoit: types.BoolValue(false), datasetId: present, billingAccountId: absent, rejected: true},
-		{name: "not doit, both missing", isDoit: types.BoolValue(false), datasetId: absent, billingAccountId: absent, rejected: true},
-		{name: "doit, both absent", isDoit: types.BoolValue(true), datasetId: absent, billingAccountId: absent},
-		{name: "doit, dataset set", isDoit: types.BoolValue(true), datasetId: present, billingAccountId: absent, rejected: true},
-		{name: "doit, billing set", isDoit: types.BoolValue(true), datasetId: absent, billingAccountId: present, rejected: true},
-		// is_doit defaults to false and that default is applied during plan
-		// modification, not config validation, so an omitted is_doit reaches
-		// ValidateConfig as null and must be treated as false.
-		{name: "is_doit omitted, both present", isDoit: types.BoolNull(), datasetId: present, billingAccountId: present},
-		{name: "is_doit omitted, both missing", isDoit: types.BoolNull(), datasetId: absent, billingAccountId: absent, rejected: true},
-		{name: "is_doit unknown", isDoit: types.BoolUnknown(), datasetId: absent, billingAccountId: absent},
-	} {
-		t.Run(testCase.name, func(t *testing.T) {
-			diags := validateDatasetAndBillingAccount(testCase.isDoit, testCase.datasetId, testCase.billingAccountId)
-			if diags.HasError() != testCase.rejected {
-				t.Errorf("rejected = %t, want %t (%v)", diags.HasError(), testCase.rejected, diags)
-			}
-		})
-	}
-}
 
 // A failing check is the most actionable thing the API can tell us, so it
 // should reach the user ahead of the status code, with the documentation link
@@ -277,7 +225,7 @@ func TestBigQueryValidationReportBecomesADiagnostic(t *testing.T) {
 		}
 	}`
 
-	detail := bigQueryConnectionAPIDiagnostic("add the BigQuery connection", false, newAPIError(422, body)).Detail()
+	detail := bigQueryConnectionAPIDiagnostic("add the BigQuery connection", newAPIError(422, body)).Detail()
 
 	if !strings.Contains(detail, "cannot read the project") {
 		t.Errorf("diagnostic should name the failing check's remedy, got: %s", detail)
@@ -293,19 +241,19 @@ func TestBigQueryValidationReportBecomesADiagnostic(t *testing.T) {
 // The ETag contract and the API key's scopes are the two failures a user is
 // least likely to diagnose unaided.
 func TestBigQueryPreconditionAndScopeDiagnostics(t *testing.T) {
-	stale := bigQueryConnectionAPIDiagnostic("update the BigQuery connection", false,
+	stale := bigQueryConnectionAPIDiagnostic("update the BigQuery connection",
 		newAPIError(412, `{"detail":"The If-Match header does not match the resource's current ETag.","code":"precondition_failed"}`))
 	if !strings.Contains(stale.Detail(), "-refresh-only") {
 		t.Errorf("a stale ETag should tell the user how to recover, got: %s", stale.Detail())
 	}
 
-	missing := bigQueryConnectionAPIDiagnostic("delete the BigQuery connection", false,
+	missing := bigQueryConnectionAPIDiagnostic("delete the BigQuery connection",
 		newAPIError(428, `{"detail":"This is a configurable resource; If-Match is required for writes.","code":"precondition_required"}`))
 	if !strings.Contains(missing.Detail(), "-refresh-only") {
 		t.Errorf("a missing ETag should tell the user how to recover, got: %s", missing.Detail())
 	}
 
-	forbidden := bigQueryConnectionAPIDiagnostic("add the BigQuery connection", false,
+	forbidden := bigQueryConnectionAPIDiagnostic("add the BigQuery connection",
 		newAPIError(403, `{"detail":"This caller lacks the bigquery_connections:write scope.","code":"forbidden"}`))
 	if !strings.Contains(forbidden.Detail(), "bigquery_connections:write") {
 		t.Errorf("a scope failure should name the scopes needed, got: %s", forbidden.Detail())
@@ -313,30 +261,9 @@ func TestBigQueryPreconditionAndScopeDiagnostics(t *testing.T) {
 }
 
 func TestBigQueryConflictDiagnosticNamesImport(t *testing.T) {
-	conflict := bigQueryConnectionAPIDiagnostic("add the BigQuery connection", false,
+	conflict := bigQueryConnectionAPIDiagnostic("add the BigQuery connection",
 		newAPIError(409, `{"detail":"GCP project 'acme-prod' is already connected.","code":"conflict"}`))
 	if !strings.Contains(conflict.Detail(), "terraform import") {
 		t.Errorf("an already-connected project should point at import, got: %s", conflict.Detail())
-	}
-}
-
-// The API answers a DoiT create rejected for lacking a user credential with the
-// same 403/forbidden shape as an ordinary missing-scope failure — there is
-// nothing in the response to branch on, so the diagnostic has to come from
-// knowing this request was a DoiT create.
-func TestBigQueryDoitCreateForbiddenNamesImportPath(t *testing.T) {
-	body := `{"detail":"Adding a DoiT-managed connection requires a user credential, not an API key.","code":"forbidden"}`
-
-	doitCreate := bigQueryConnectionAPIDiagnostic("add the BigQuery connection", true, newAPIError(403, body))
-	if !strings.Contains(doitCreate.Detail(), "terraform import") {
-		t.Errorf("a DoiT create's 403 should point at the UI and import, got: %s", doitCreate.Detail())
-	}
-
-	plainForbidden := bigQueryConnectionAPIDiagnostic("add the BigQuery connection", false, newAPIError(403, body))
-	if strings.Contains(plainForbidden.Detail(), "terraform import") {
-		t.Errorf("a non-DoiT-create 403 should not mention import, got: %s", plainForbidden.Detail())
-	}
-	if !strings.Contains(plainForbidden.Detail(), "bigquery_connections:write") {
-		t.Errorf("a non-DoiT-create 403 should name the scopes, got: %s", plainForbidden.Detail())
 	}
 }

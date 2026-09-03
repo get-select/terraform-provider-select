@@ -14,6 +14,15 @@ import (
 
 // BigQuery connections live on the v2 API. See v2_api.go for the conventions
 // every resource on that surface shares.
+//
+// The API also supports is_doit, which reads a project's spend from DoiT's own
+// billing data instead of an export in the customer's project. This resource
+// has no knowledge of it: adding one needs a signed-in user's credential this
+// provider never holds, and in practice neither DoiT staff nor customers
+// manage one through Terraform. bigquery_dataset_id and billing_account_id are
+// therefore always required and settable here, matching the create request's
+// non-DoiT shape; a DoiT-managed connection is out of this resource's scope
+// entirely.
 const bigQueryConnectionsEndpoint = "/v2/bigquery-connections"
 
 func bigQueryConnectionEndpoint(id string) string {
@@ -30,16 +39,12 @@ var bigQueryConnectionErrors = v2ErrorFormat{
 }
 
 // bigQueryConnectionCreatePayload mirrors BigQueryConnectionCreate.
-// bigquery_dataset_id and billing_account_id are omitted rather than sent as
-// null: the API requires both when is_doit is false and rejects either being
-// present at all when it is true, so a DoiT create must not send them.
 type bigQueryConnectionCreatePayload struct {
 	Name                     string  `json:"name"`
 	GcpProjectId             string  `json:"gcp_project_id"`
 	BigqueryDatasetId        *string `json:"bigquery_dataset_id,omitempty"`
 	BillingAccountId         *string `json:"billing_account_id,omitempty"`
 	ServiceAccount           string  `json:"service_account"`
-	IsDoit                   bool    `json:"is_doit"`
 	SyncEnabled              bool    `json:"sync_enabled"`
 	QuerySanitizationEnabled bool    `json:"query_sanitization_enabled"`
 }
@@ -50,12 +55,11 @@ type bigQueryConnectionCreatePayload struct {
 // Every field is omitted when it has not changed, the same shape
 // databricksConnectionUpdatePayload uses and for the same two reasons:
 //
-//   - Nothing on this resource can be cleared. The API rejects null for name,
-//     gcp_project_id, service_account, sync_enabled and
-//     query_sanitization_enabled directly, and for bigquery_dataset_id and
-//     billing_account_id through a check against the connection's stored
-//     is_doit — so there is no removal that has to reach the API as an
-//     explicit null.
+//   - Nothing this resource can create is ever clearable. The API rejects null
+//     for name, gcp_project_id, service_account, sync_enabled and
+//     query_sanitization_enabled directly; bigquery_dataset_id and
+//     billing_account_id are only clearable on a DoiT-managed connection,
+//     which this resource never creates or knowingly manages.
 //   - SELECT re-validates against BigQuery when gcp_project_id,
 //     bigquery_dataset_id, billing_account_id or service_account are
 //     *present* in the patch, not when they change. Sending them
@@ -71,7 +75,10 @@ type bigQueryConnectionUpdatePayload struct {
 	QuerySanitizationEnabled *bool   `json:"query_sanitization_enabled,omitempty"`
 }
 
-// bigQueryConnectionResponse mirrors BigQueryConnection.
+// bigQueryConnectionResponse mirrors BigQueryConnection. is_doit and
+// doit_billing_status are not read: this resource never sets is_doit, so
+// they carry no information a create or update of a resource managed here
+// needs to act on.
 type bigQueryConnectionResponse struct {
 	Id                       string   `json:"id"`
 	Etag                     string   `json:"etag"`
@@ -83,8 +90,7 @@ type bigQueryConnectionResponse struct {
 	GcpOrganizationId        *string  `json:"gcp_organization_id"`
 	GcpOrganizationName      *string  `json:"gcp_organization_name"`
 	Regions                  []string `json:"regions"`
-	IsDoit                   bool     `json:"is_doit"`
-	DoitBillingStatus        *string  `json:"doit_billing_status"`
+	ConnectionId             string   `json:"connection_id"`
 	SyncEnabled              bool     `json:"sync_enabled"`
 	QuerySanitizationEnabled bool     `json:"query_sanitization_enabled"`
 	AddedByEmail             *string  `json:"added_by_email"`
@@ -100,7 +106,6 @@ func buildBigQueryConnectionCreate(plan *resource_bigquery_connection.BigqueryCo
 		BigqueryDatasetId:        stringPointer(plan.BigqueryDatasetId),
 		BillingAccountId:         stringPointer(plan.BillingAccountId),
 		ServiceAccount:           plan.ServiceAccount.ValueString(),
-		IsDoit:                   plan.IsDoit.ValueBool(),
 		SyncEnabled:              plan.SyncEnabled.ValueBool(),
 		QuerySanitizationEnabled: plan.QuerySanitizationEnabled.ValueBool(),
 	}
@@ -164,8 +169,7 @@ func applyBigQueryConnectionResponse(
 	model.GcpOrganizationId = stringValue(connection.GcpOrganizationId)
 	model.GcpOrganizationName = stringValue(connection.GcpOrganizationName)
 	model.Regions = regions
-	model.IsDoit = types.BoolValue(connection.IsDoit)
-	model.DoitBillingStatus = stringValue(connection.DoitBillingStatus)
+	model.ConnectionId = types.StringValue(connection.ConnectionId)
 	model.SyncEnabled = types.BoolValue(connection.SyncEnabled)
 	model.QuerySanitizationEnabled = types.BoolValue(connection.QuerySanitizationEnabled)
 	model.AddedByEmail = stringValue(connection.AddedByEmail)
@@ -177,11 +181,10 @@ func applyBigQueryConnectionResponse(
 }
 
 // bigQueryConnectionAPIDiagnostic turns an API failure into the most useful
-// diagnostic available for it. isDoitCreate is true only when the failure came
-// from creating a connection with is_doit set: the API answers that case with
-// the same 403/forbidden code as a missing scope, so which explanation applies
-// has to come from what this request was, not from anything in the response.
-func bigQueryConnectionAPIDiagnostic(operation string, isDoitCreate bool, apiErr *apiError) diag.Diagnostic {
+// diagnostic available for it: the checks that did not pass when SELECT ran
+// them against BigQuery, an explanation of the ETag contract for a
+// precondition failure, and the problem document's detail otherwise.
+func bigQueryConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
 	if diagnostic := v2ValidationDiagnostic("BigQuery Connection Validation Failed", operation, apiErr); diagnostic != nil {
 		return diagnostic
 	}
@@ -200,15 +203,6 @@ func bigQueryConnectionAPIDiagnostic(operation string, isDoitCreate bool, apiErr
 				operation, apiErr.Detail),
 		)
 	case http.StatusForbidden:
-		if isDoitCreate {
-			return diag.NewErrorDiagnostic(
-				"DoiT-Managed Connection Requires a User Credential",
-				fmt.Sprintf("SELECT could not %s because a DoiT-managed connection (is_doit = true) "+
-					"can only be added by a signed-in user, not an API key. Add it in the SELECT UI, "+
-					"then bring it under Terraform with `terraform import`.\n\n%s",
-					operation, apiErr.Detail),
-			)
-		}
 		return bigQueryConnectionErrors.forbidden(operation, apiErr)
 	default:
 		return bigQueryConnectionErrors.unexpected(operation, apiErr)
