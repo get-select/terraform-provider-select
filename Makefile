@@ -98,7 +98,7 @@ test-all:
 	@echo "========================================="
 	@echo "Running provider tests..."
 	@echo "Note: Skipping terraform init when using dev overrides (as recommended by Terraform)"
-	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test provider.tftest.hcl
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=provider.tftest.hcl
 	@echo "========================================="
 	@echo "All tests completed!"
 
@@ -114,7 +114,7 @@ test-all:
 #   TF_VAR_snowflake_warehouse, TF_VAR_snowflake_export_storage_integration_name
 test-snowflake:
 	@echo "Running Snowflake account tests against a real Snowflake connection..."
-	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test snowflake_account.tftest.hcl
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=snowflake_account.tftest.hcl
 
 # Databricks connection tests, which manage a real connection: creating one makes
 # SELECT validate the configuration against Databricks, so these need a service
@@ -128,7 +128,7 @@ test-snowflake:
 #   TF_VAR_databricks_client_secret
 test-databricks:
 	@echo "Running Databricks connection tests against a real Databricks account..."
-	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test databricks_connection.tftest.hcl
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=databricks_connection.tftest.hcl
 
 # BigQuery connection tests, which manage a real connection: creating one makes
 # SELECT validate the configuration against BigQuery, so these need a GCP
@@ -141,7 +141,7 @@ test-databricks:
 #   TF_VAR_bigquery_billing_account_id, TF_VAR_bigquery_service_account
 test-bigquery:
 	@echo "Running BigQuery connection tests against a real GCP project..."
-	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test bigquery_connection.tftest.hcl
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=bigquery_connection.tftest.hcl
 
 # AWS connection tests, which manage a real connection: creating one makes
 # SELECT read the Cost and Usage Report out of S3, so these need an AWS payer
@@ -154,7 +154,7 @@ test-bigquery:
 #   TF_VAR_aws_region, TF_VAR_aws_access_key_id, TF_VAR_aws_secret_access_key
 test-aws:
 	@echo "Running AWS connection tests against a real AWS payer account..."
-	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test aws_connection.tftest.hcl
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=aws_connection.tftest.hcl
 
 # The four connection suites in one target. Each manages a real connection, so
 # this needs every credential the individual targets do.
