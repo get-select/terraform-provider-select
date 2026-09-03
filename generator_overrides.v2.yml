@@ -67,8 +67,6 @@ resources:
         use_state_for_unknown: true
       create_time:
         use_state_for_unknown: true
-      connection_id:
-        use_state_for_unknown: true
 
       # SELECT stores each of these exactly as given and returns it unchanged, so
       # the configuration is the only source for them.
