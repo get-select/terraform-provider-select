@@ -36,6 +36,7 @@ var awsConnectionErrors = v2ErrorFormat{
 const (
 	fieldPayerAccountId = "payer_account_id"
 	fieldS3Bucket       = "s3_bucket"
+	fieldName           = "name"
 )
 
 // awsCredentialsPayload mirrors the API's AwsCredentials. Both fields are
@@ -209,10 +210,14 @@ func awsConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnos
 	case http.StatusPreconditionRequired:
 		return awsConnectionErrors.preconditionRequired(operation, apiErr)
 	case http.StatusConflict:
-		// SELECT rejects a second connection covering ground it already reads,
-		// which is either the same payer account or the same report location.
-		// Both arrive as already_connected, so the field is what tells them apart.
-		if apiErr.field() == fieldS3Bucket {
+		// SELECT rejects a second connection covering ground it already reads —
+		// the same payer account or the same report location — and, separately,
+		// a connection name already used by another connection in the
+		// organization. All three arrive as the same conflict status; field is
+		// what tells them apart, since the first two both carry the issue
+		// already_connected.
+		switch apiErr.field() {
+		case fieldS3Bucket:
 			return diag.NewErrorDiagnostic(
 				"S3 Location Already Connected",
 				fmt.Sprintf("SELECT could not %s because this bucket and prefix are already read by "+
@@ -220,14 +225,22 @@ func awsConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnos
 					"existing connection under Terraform with `terraform import`.\n\n%s",
 					operation, apiErr.Detail),
 			)
+		case fieldName:
+			return diag.NewErrorDiagnostic(
+				"Connection Name Already Exists",
+				fmt.Sprintf("SELECT could not %s because another connection is already named that. "+
+					"Connection names must be unique within an organization; choose a different "+
+					"name.\n\n%s", operation, apiErr.Detail),
+			)
+		default:
+			return diag.NewErrorDiagnostic(
+				"AWS Connection Already Exists",
+				fmt.Sprintf("SELECT could not %s because this payer account is already connected. "+
+					"SELECT supports one connection per payer account; bring the existing one under "+
+					"Terraform with `terraform import` instead of adding it again.\n\n%s",
+					operation, apiErr.Detail),
+			)
 		}
-		return diag.NewErrorDiagnostic(
-			"AWS Connection Already Exists",
-			fmt.Sprintf("SELECT could not %s because this payer account is already connected. "+
-				"SELECT supports one connection per payer account; bring the existing one under "+
-				"Terraform with `terraform import` instead of adding it again.\n\n%s",
-				operation, apiErr.Detail),
-		)
 	case http.StatusForbidden:
 		return awsConnectionErrors.forbidden(operation, apiErr)
 	case http.StatusServiceUnavailable:

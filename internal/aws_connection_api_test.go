@@ -288,6 +288,24 @@ func TestAwsConflictDiagnosticsDifferByField(t *testing.T) {
 	}
 }
 
+// A third conflict cause, added to the API after this resource was first
+// built: two connections cannot share a display name. It carries its own
+// issue, unlike the other two, but still has to be told apart by field —
+// nothing here should assume only two field values are possible.
+func TestAwsConflictDiagnosticNamesDuplicateConnectionName(t *testing.T) {
+	name := awsConnectionAPIDiagnostic("add the AWS connection", newAPIError(409, `{
+		"detail": "A connection named 'Acme Production' already exists.",
+		"code": "conflict",
+		"details": [{"field": "name", "issue": "name_already_exists"}]
+	}`))
+	if strings.Contains(name.Detail(), "payer account") || strings.Contains(name.Detail(), "report location") {
+		t.Errorf("a duplicate name should not be misreported as a duplicate payer account or report location, got: %s", name.Detail())
+	}
+	if !strings.Contains(name.Detail(), "unique") {
+		t.Errorf("a duplicate name should explain that names must be unique, got: %s", name.Detail())
+	}
+}
+
 // The credential store is something SELECT reaches on every write, so its being
 // down says nothing about the configuration and the remedy is to apply again.
 func TestAwsCredentialStoreUnavailableIsRetryable(t *testing.T) {
