@@ -93,8 +93,11 @@ account, so the grant lives in the target GCP project's IAM, not here.
 `.github/workflows/e2e.yaml` runs all four suites as a matrix against the
 deployed API using a dedicated test organization. Credentials come from GitHub
 secrets mapped to the `TF_VAR_` names above — the same mechanism the select
-repo's `test-e2e.yaml` uses. The `E2E_CREATE_*` secrets are shared with that
-workflow; the `TF_E2E_*` ones belong to this repo.
+repo's `test-e2e.yaml` uses, though every secret here is its own copy rather
+than shared with it. select's equivalents are named `E2E_CREATE_*` because it
+also runs e2e tests against *pre-existing* Snowflake connections (so `CREATE_`
+distinguishes the ones its create-flow test provisions); this repo never has
+that second kind, so its names drop the `CREATE_`.
 
 Two things keep runs from tripping over each other:
 

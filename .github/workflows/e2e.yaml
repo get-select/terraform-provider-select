@@ -10,8 +10,8 @@
 #
 # Credentials come from GitHub secrets, mapped to the TF_VAR_ variables
 # tests/main.tf declares — the same mechanism the select repo's test-e2e.yaml
-# uses. The three E2E_CREATE_* families are shared with that workflow; the
-# TF_E2E_* ones are specific to this repo. See tests/README.md for the full list.
+# uses, though every secret name here is specific to this repo rather than
+# shared with it. See tests/README.md for the full list.
 name: End-to-End Tests
 
 on:
@@ -83,30 +83,30 @@ jobs:
       # Snowflake. The account identifier is the resource's own id and cannot
       # carry the run prefix; the display name does, which is what the sweep
       # matches on.
-      TF_VAR_snowflake_account_id: ${{ secrets.E2E_CREATE_SNOWFLAKE_ACCOUNT_CONNECTION_IDENTIFIER }}
+      TF_VAR_snowflake_account_id: ${{ secrets.E2E_SNOWFLAKE_ACCOUNT_CONNECTION_IDENTIFIER }}
       TF_VAR_snowflake_account_name: terraform-test-${{ github.run_id }}-snowflake
-      TF_VAR_snowflake_username: ${{ secrets.E2E_CREATE_SNOWFLAKE_ACCOUNT_CONNECTION_USER }}
-      TF_VAR_snowflake_private_key: ${{ secrets.E2E_CREATE_SNOWFLAKE_ACCOUNT_CONNECTION_PRIVATE_KEY }}
+      TF_VAR_snowflake_username: ${{ secrets.E2E_SNOWFLAKE_ACCOUNT_CONNECTION_USER }}
+      TF_VAR_snowflake_private_key: ${{ secrets.E2E_SNOWFLAKE_ACCOUNT_CONNECTION_PRIVATE_KEY }}
       TF_VAR_snowflake_role: ${{ secrets.TF_E2E_SNOWFLAKE_ROLE }}
       TF_VAR_snowflake_warehouse: ${{ secrets.TF_E2E_SNOWFLAKE_WAREHOUSE }}
       TF_VAR_snowflake_export_storage_integration_name: ${{ secrets.TF_E2E_SNOWFLAKE_STORAGE_INTEGRATION }}
 
       # Databricks.
       TF_VAR_databricks_connection_name: terraform-test-${{ github.run_id }}-databricks
-      TF_VAR_databricks_account_id: ${{ secrets.E2E_CREATE_DATABRICKS_ACCOUNT_ID }}
-      TF_VAR_databricks_workspace_url: ${{ secrets.E2E_CREATE_DATABRICKS_ACCOUNT_WORKSPACE_URL }}
-      TF_VAR_databricks_warehouse_id: ${{ secrets.E2E_CREATE_DATABRICKS_ACCOUNT_WAREHOUSE_ID }}
-      TF_VAR_databricks_client_id: ${{ secrets.E2E_CREATE_DATABRICKS_ACCOUNT_CLIENT_ID }}
-      TF_VAR_databricks_client_secret: ${{ secrets.E2E_CREATE_DATABRICKS_ACCOUNT_CLIENT_SECRET }}
+      TF_VAR_databricks_account_id: ${{ secrets.E2E_DATABRICKS_ACCOUNT_ID }}
+      TF_VAR_databricks_workspace_url: ${{ secrets.E2E_DATABRICKS_ACCOUNT_WORKSPACE_URL }}
+      TF_VAR_databricks_warehouse_id: ${{ secrets.E2E_DATABRICKS_ACCOUNT_WAREHOUSE_ID }}
+      TF_VAR_databricks_client_id: ${{ secrets.E2E_DATABRICKS_ACCOUNT_CLIENT_ID }}
+      TF_VAR_databricks_client_secret: ${{ secrets.E2E_DATABRICKS_ACCOUNT_CLIENT_SECRET }}
 
       # BigQuery. The connection carries no credential of its own — access comes
       # from the SELECT backend impersonating the service account named here, so
       # that project's IAM has to grant it, not this runner.
       TF_VAR_bigquery_connection_name: terraform-test-${{ github.run_id }}-bigquery
-      TF_VAR_bigquery_gcp_project_id: ${{ secrets.E2E_CREATE_BIGQUERY_CONNECTION_PROJECT_ID }}
-      TF_VAR_bigquery_dataset_id: ${{ secrets.E2E_CREATE_BIGQUERY_CONNECTION_DATASET_NAME }}
-      TF_VAR_bigquery_billing_account_id: ${{ secrets.E2E_CREATE_BIGQUERY_CONNECTION_BILLING_ACCOUNT_ID }}
-      TF_VAR_bigquery_service_account: ${{ secrets.E2E_CREATE_BIGQUERY_CONNECTION_SERVICE_ACCOUNT }}
+      TF_VAR_bigquery_gcp_project_id: ${{ secrets.E2E_BIGQUERY_CONNECTION_PROJECT_ID }}
+      TF_VAR_bigquery_dataset_id: ${{ secrets.E2E_BIGQUERY_CONNECTION_DATASET_NAME }}
+      TF_VAR_bigquery_billing_account_id: ${{ secrets.E2E_BIGQUERY_CONNECTION_BILLING_ACCOUNT_ID }}
+      TF_VAR_bigquery_service_account: ${{ secrets.E2E_BIGQUERY_CONNECTION_SERVICE_ACCOUNT }}
 
       # AWS.
       TF_VAR_aws_connection_name: terraform-test-${{ github.run_id }}-aws
