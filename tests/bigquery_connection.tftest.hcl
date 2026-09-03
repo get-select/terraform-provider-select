@@ -18,6 +18,11 @@
 
 variables {
   enable_bigquery_connection_tests = true
+  # This suite shares tests/main.tf's root module with provider.tftest.hcl, so
+  # every apply here would otherwise also create the usage group set/group
+  # resources that file needs — resources this suite's API key isn't scoped for
+  # and has nothing to do with anyway.
+  enable_usage_group_tests = false
 }
 
 # The connection is added with the project SELECT validated, and with the ETag

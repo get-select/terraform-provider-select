@@ -31,6 +31,16 @@ variable "select_api_url" {
   default     = "http://localhost:8000"
 }
 
+# Whether to manage the usage group set/group resources below. Default true so
+# provider.tftest.hcl and `make test`/`test-all` are unaffected; each connection
+# suite sets this false in its own file, since it shares this root module but
+# has nothing to do with usage groups.
+variable "enable_usage_group_tests" {
+  description = "Whether to manage the usage group set/group test resources"
+  type        = bool
+  default     = true
+}
+
 # Test-specific variables with defaults
 variable "usage_group_set_name" {
   description = "Name for the usage group set"
@@ -349,14 +359,29 @@ provider "select" {
   select_api_url  = var.select_api_url
 }
 
+# count keeps these six out of the way of the connection suites: each one
+# manages a real connection and shares this root module with provider.tftest.hcl,
+# so an apply triggered by any run — in any file — creates every unconditional
+# resource here regardless of which file asked for it. A connection suite's API
+# key is scoped only to its own resource type, so an ungated usage group set
+# 403s on "Insufficient scope"; even a fully-scoped key would then hit
+# test_team's hardcoded team_id, which exists in whatever org this was
+# originally built against but not in a fresh one. Neither is a real dependency
+# these suites have, so enable_usage_group_tests just turns them off instead of
+# working around it.
+
 # Usage group set with SELECT organization scope
 resource "select_usage_group_set" "test_org" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name  = var.usage_group_set_name
   order = var.usage_group_set_order
 }
 
 # Usage group set with team scope
 resource "select_usage_group_set" "test_team" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name    = "${var.usage_group_set_name}-team"
   order   = 2
   team_id = var.test_team_id
@@ -364,6 +389,8 @@ resource "select_usage_group_set" "test_team" {
 
 # Usage group set with SELECT organization scope (no scope fields)
 resource "select_usage_group_set" "test_select_org" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name  = "${var.usage_group_set_name}-select-org"
   order = 3
   # No scope fields = SELECT organization scope
@@ -371,28 +398,34 @@ resource "select_usage_group_set" "test_select_org" {
 
 # Basic usage group
 resource "select_usage_group" "test_basic" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name                   = var.usage_group_name
   order                  = var.usage_group_order
   budget                 = var.usage_group_budget
-  usage_group_set_id     = select_usage_group_set.test_org.id
+  usage_group_set_id     = select_usage_group_set.test_org[0].id
   filter_expression_json = var.simple_filter_expression_json
 }
 
 # Usage group with budget
 resource "select_usage_group" "test_with_budget" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name                   = "${var.usage_group_name}-with-budget"
   order                  = var.usage_group_order + 1
   budget                 = 100.0
-  usage_group_set_id     = select_usage_group_set.test_org.id
+  usage_group_set_id     = select_usage_group_set.test_org[0].id
   filter_expression_json = var.simple_filter_expression_json
 }
 
 # Usage group with complex filter
 resource "select_usage_group" "test_complex_filter" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name                   = "${var.usage_group_name}-complex"
   order                  = var.usage_group_order + 2
   budget                 = null
-  usage_group_set_id     = select_usage_group_set.test_org.id
+  usage_group_set_id     = select_usage_group_set.test_org[0].id
   filter_expression_json = var.complex_filter_expression_json
 }
 
@@ -475,37 +508,39 @@ resource "select_aws_connection" "test" {
   sync_enabled = var.aws_sync_enabled
 }
 
-# Outputs for verification
+# Outputs for verification. one() rather than [0]: these are unconditional, so
+# they're still evaluated — and would error on an out-of-range index — when a
+# connection suite runs with enable_usage_group_tests left at its default false.
 output "usage_group_set_id" {
-  value = select_usage_group_set.test_org.id
+  value = one(select_usage_group_set.test_org[*].id)
 }
 
 output "usage_group_set_name" {
-  value = select_usage_group_set.test_org.name
+  value = one(select_usage_group_set.test_org[*].name)
 }
 
 output "basic_usage_group_id" {
-  value = select_usage_group.test_basic.id
+  value = one(select_usage_group.test_basic[*].id)
 }
 
 output "basic_usage_group_name" {
-  value = select_usage_group.test_basic.name
+  value = one(select_usage_group.test_basic[*].name)
 }
 
 output "usage_group_with_budget_id" {
-  value = select_usage_group.test_with_budget.id
+  value = one(select_usage_group.test_with_budget[*].id)
 }
 
 output "usage_group_complex_filter_id" {
-  value = select_usage_group.test_complex_filter.id
+  value = one(select_usage_group.test_complex_filter[*].id)
 }
 
 output "team_usage_group_set_id" {
-  value = select_usage_group_set.test_team.id
+  value = one(select_usage_group_set.test_team[*].id)
 }
 
 output "select_org_usage_group_set_id" {
-  value = select_usage_group_set.test_select_org.id
+  value = one(select_usage_group_set.test_select_org[*].id)
 }
 
 # The ids SELECT assigned, so a later run block can assert an update kept the

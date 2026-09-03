@@ -7,12 +7,12 @@ variables {
   # and must correlate to an APIKey in the Db of whatever instance you're testing against
   # TF_VAR_select_api_key
   # TF_VAR_select_organization_id
-  test_team_id = "2f0899e2-2746-4300-887c-524e64b5a138"
-  usage_group_set_name        = "terraform-test-set"
-  usage_group_set_order       = 1
-  usage_group_name            = "terraform-test-group"
-  usage_group_order           = 1
-  usage_group_budget          = 100.0
+  test_team_id          = "2f0899e2-2746-4300-887c-524e64b5a138"
+  usage_group_set_name  = "terraform-test-set"
+  usage_group_set_order = 1
+  usage_group_name      = "terraform-test-group"
+  usage_group_order     = 1
+  usage_group_budget    = 100.0
 }
 
 # Test 1: Basic usage group set creation
@@ -20,17 +20,17 @@ run "create_usage_group_set" {
   command = apply
 
   assert {
-    condition     = select_usage_group_set.test_org.name == var.usage_group_set_name
+    condition     = select_usage_group_set.test_org[0].name == var.usage_group_set_name
     error_message = "Usage group set name should match expected value"
   }
 
   assert {
-    condition     = select_usage_group_set.test_org.order == var.usage_group_set_order
+    condition     = select_usage_group_set.test_org[0].order == var.usage_group_set_order
     error_message = "Usage group set order should match expected value"
   }
 
   assert {
-    condition     = select_usage_group_set.test_org.id != null
+    condition     = select_usage_group_set.test_org[0].id != null
     error_message = "Usage group set ID should be set after creation"
   }
 }
@@ -40,17 +40,17 @@ run "create_team_scoped_usage_group_set" {
   command = apply
 
   assert {
-    condition     = select_usage_group_set.test_team.name == "${var.usage_group_set_name}-team"
+    condition     = select_usage_group_set.test_team[0].name == "${var.usage_group_set_name}-team"
     error_message = "Team-scoped usage group set name should match expected value"
   }
 
   assert {
-    condition     = select_usage_group_set.test_team.team_id == var.test_team_id
+    condition     = select_usage_group_set.test_team[0].team_id == var.test_team_id
     error_message = "Team ID should match expected value"
   }
 
   assert {
-    condition     = select_usage_group_set.test_team.id != null
+    condition     = select_usage_group_set.test_team[0].id != null
     error_message = "Team-scoped usage group set ID should be set after creation"
   }
 }
@@ -60,17 +60,17 @@ run "create_select_org_scoped_usage_group_set" {
   command = apply
 
   assert {
-    condition     = select_usage_group_set.test_select_org.name == "${var.usage_group_set_name}-select-org"
+    condition     = select_usage_group_set.test_select_org[0].name == "${var.usage_group_set_name}-select-org"
     error_message = "SELECT org-scoped usage group set name should match expected value"
   }
 
   assert {
-    condition     = select_usage_group_set.test_select_org.team_id == null
+    condition     = select_usage_group_set.test_select_org[0].team_id == null
     error_message = "Team ID should be null for SELECT org-scoped set"
   }
 
   assert {
-    condition     = select_usage_group_set.test_select_org.id != null
+    condition     = select_usage_group_set.test_select_org[0].id != null
     error_message = "SELECT org-scoped usage group set ID should be set after creation"
   }
 }
@@ -80,27 +80,27 @@ run "create_usage_groups" {
   command = apply
 
   assert {
-    condition     = select_usage_group.test_basic.name == var.usage_group_name
+    condition     = select_usage_group.test_basic[0].name == var.usage_group_name
     error_message = "Basic usage group name should match expected value"
   }
 
   assert {
-    condition     = select_usage_group.test_basic.order == var.usage_group_order
+    condition     = select_usage_group.test_basic[0].order == var.usage_group_order
     error_message = "Basic usage group order should match expected value"
   }
 
   assert {
-    condition     = select_usage_group.test_basic.usage_group_set_id == select_usage_group_set.test_org.id
+    condition     = select_usage_group.test_basic[0].usage_group_set_id == select_usage_group_set.test_org[0].id
     error_message = "Usage group should belong to the correct usage group set"
   }
 
   assert {
-    condition     = select_usage_group.test_basic.budget == 100.0
+    condition     = select_usage_group.test_basic[0].budget == 100.0
     error_message = "Basic usage group should have default budget of 100 when not specified"
   }
 
   assert {
-    condition     = select_usage_group.test_basic.filter_expression_json != null
+    condition     = select_usage_group.test_basic[0].filter_expression_json != null
     error_message = "Usage group should have a filter expression"
   }
 }
@@ -110,17 +110,17 @@ run "verify_usage_group_with_budget" {
   command = plan
 
   assert {
-    condition     = select_usage_group.test_with_budget.budget == var.usage_group_budget
+    condition     = select_usage_group.test_with_budget[0].budget == var.usage_group_budget
     error_message = "Usage group with budget should have correct budget value"
   }
 
   assert {
-    condition     = select_usage_group.test_with_budget.name == "${var.usage_group_name}-with-budget"
+    condition     = select_usage_group.test_with_budget[0].name == "${var.usage_group_name}-with-budget"
     error_message = "Usage group with budget should have correct name"
   }
 
   assert {
-    condition     = select_usage_group.test_with_budget.usage_group_set_id == select_usage_group_set.test_org.id
+    condition     = select_usage_group.test_with_budget[0].usage_group_set_id == select_usage_group_set.test_org[0].id
     error_message = "Usage group with budget should belong to correct set"
   }
 }
@@ -130,18 +130,18 @@ run "verify_complex_filter" {
   command = plan
 
   assert {
-    condition     = select_usage_group.test_complex_filter.filter_expression_json != null
+    condition     = select_usage_group.test_complex_filter[0].filter_expression_json != null
     error_message = "Complex filter usage group should have filter expression"
   }
 
   assert {
-    condition     = select_usage_group.test_complex_filter.name == "${var.usage_group_name}-complex"
+    condition     = select_usage_group.test_complex_filter[0].name == "${var.usage_group_name}-complex"
     error_message = "Complex filter usage group should have correct name"
   }
 
   # Verify the filter expression is valid JSON (basic check)
   assert {
-    condition     = length(select_usage_group.test_complex_filter.filter_expression_json) > 10
+    condition     = length(select_usage_group.test_complex_filter[0].filter_expression_json) > 10
     error_message = "Filter expression JSON should not be empty"
   }
 }
@@ -186,18 +186,18 @@ run "update_usage_group_set" {
   }
 
   assert {
-    condition     = select_usage_group_set.test_org.name == "terraform-test-set-updated"
+    condition     = select_usage_group_set.test_org[0].name == "terraform-test-set-updated"
     error_message = "Usage group set name should be updated"
   }
 
   assert {
-    condition     = select_usage_group_set.test_org.order == 5
+    condition     = select_usage_group_set.test_org[0].order == 5
     error_message = "Usage group set order should be updated"
   }
 
   # Ensure ID stability during updates
   assert {
-    condition     = select_usage_group_set.test_org.id != null
+    condition     = select_usage_group_set.test_org[0].id != null
     error_message = "Usage group set ID should remain stable during updates"
   }
 }
@@ -213,23 +213,23 @@ run "update_usage_group" {
   }
 
   assert {
-    condition     = select_usage_group.test_basic.name == "terraform-test-group-updated"
+    condition     = select_usage_group.test_basic[0].name == "terraform-test-group-updated"
     error_message = "Usage group name should be updated"
   }
 
   assert {
-    condition     = select_usage_group.test_basic.order == 3
+    condition     = select_usage_group.test_basic[0].order == 3
     error_message = "Usage group order should be updated"
   }
 
   assert {
-    condition     = select_usage_group.test_basic.budget == 50.0
+    condition     = select_usage_group.test_basic[0].budget == 50.0
     error_message = "Usage group budget should be updated"
   }
 
   # Ensure ID stability during updates
   assert {
-    condition     = select_usage_group.test_basic.id != null
+    condition     = select_usage_group.test_basic[0].id != null
     error_message = "Usage group ID should remain stable during updates"
   }
 }
