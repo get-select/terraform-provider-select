@@ -33,6 +33,7 @@ func bigQueryConnectionEndpoint(id string) string {
 var bigQueryConnectionErrors = v2ErrorFormat{
 	Noun:       "BigQuery Connection",
 	Subject:    "the connection",
+	Object:     "the BigQuery connection",
 	Plural:     "BigQuery connections",
 	ReadScope:  "bigquery_connections:read",
 	WriteScope: "bigquery_connections:write",
@@ -114,31 +115,15 @@ func buildBigQueryConnectionCreate(plan *resource_bigquery_connection.BigqueryCo
 // buildBigQueryConnectionUpdate carries only the fields whose configured value
 // differs from what state records. See bigQueryConnectionUpdatePayload.
 func buildBigQueryConnectionUpdate(plan, state *resource_bigquery_connection.BigqueryConnectionModel) *bigQueryConnectionUpdatePayload {
-	payload := &bigQueryConnectionUpdatePayload{}
-
-	if !plan.Name.Equal(state.Name) {
-		payload.Name = stringPointer(plan.Name)
+	return &bigQueryConnectionUpdatePayload{
+		Name:                     changedString(plan.Name, state.Name),
+		GcpProjectId:             changedString(plan.GcpProjectId, state.GcpProjectId),
+		BigqueryDatasetId:        changedString(plan.BigqueryDatasetId, state.BigqueryDatasetId),
+		BillingAccountId:         changedString(plan.BillingAccountId, state.BillingAccountId),
+		ServiceAccount:           changedString(plan.ServiceAccount, state.ServiceAccount),
+		SyncEnabled:              changedBool(plan.SyncEnabled, state.SyncEnabled),
+		QuerySanitizationEnabled: changedBool(plan.QuerySanitizationEnabled, state.QuerySanitizationEnabled),
 	}
-	if !plan.GcpProjectId.Equal(state.GcpProjectId) {
-		payload.GcpProjectId = stringPointer(plan.GcpProjectId)
-	}
-	if !plan.BigqueryDatasetId.Equal(state.BigqueryDatasetId) {
-		payload.BigqueryDatasetId = stringPointer(plan.BigqueryDatasetId)
-	}
-	if !plan.BillingAccountId.Equal(state.BillingAccountId) {
-		payload.BillingAccountId = stringPointer(plan.BillingAccountId)
-	}
-	if !plan.ServiceAccount.Equal(state.ServiceAccount) {
-		payload.ServiceAccount = stringPointer(plan.ServiceAccount)
-	}
-	if !plan.SyncEnabled.Equal(state.SyncEnabled) {
-		payload.SyncEnabled = boolPointer(plan.SyncEnabled)
-	}
-	if !plan.QuerySanitizationEnabled.Equal(state.QuerySanitizationEnabled) {
-		payload.QuerySanitizationEnabled = boolPointer(plan.QuerySanitizationEnabled)
-	}
-
-	return payload
 }
 
 // applyBigQueryConnectionResponse writes an API response onto the model.
@@ -191,26 +176,21 @@ func applyBigQueryConnectionResponse(
 // them against BigQuery, an explanation of the ETag contract for a
 // precondition failure, and the problem document's detail otherwise.
 func bigQueryConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
-	if diagnostic := v2ValidationDiagnostic("BigQuery Connection Validation Failed", operation, apiErr); diagnostic != nil {
-		return diagnostic
-	}
+	return bigQueryConnectionErrors.diagnostic(operation, apiErr, bigQueryConnectionSpecificDiagnostic)
+}
 
-	switch apiErr.StatusCode {
-	case http.StatusPreconditionFailed:
-		return bigQueryConnectionErrors.preconditionFailed(operation, apiErr)
-	case http.StatusPreconditionRequired:
-		return bigQueryConnectionErrors.preconditionRequired(operation, apiErr)
-	case http.StatusConflict:
-		return diag.NewErrorDiagnostic(
-			"BigQuery Connection Already Exists",
-			fmt.Sprintf("SELECT could not %s because this GCP project is already connected. "+
-				"SELECT supports one connection per project; bring the existing one under "+
-				"Terraform with `terraform import` instead of adding it again.\n\n%s",
-				operation, apiErr.Detail),
-		)
-	case http.StatusForbidden:
-		return bigQueryConnectionErrors.forbidden(operation, apiErr)
-	default:
-		return bigQueryConnectionErrors.unexpected(operation, apiErr)
+// bigQueryConnectionSpecificDiagnostic is this resource's own opinion about an
+// API failure: BigQuery supports at most one connection per project, unlike
+// every status this resource shares with the rest of the v2 surface.
+func bigQueryConnectionSpecificDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
+	if apiErr.StatusCode != http.StatusConflict {
+		return nil
 	}
+	return diag.NewErrorDiagnostic(
+		"BigQuery Connection Already Exists",
+		fmt.Sprintf("SELECT could not %s because this GCP project is already connected. "+
+			"SELECT supports one connection per project; bring the existing one under "+
+			"Terraform with `terraform import` instead of adding it again.\n\n%s",
+			operation, apiErr.Detail),
+	)
 }

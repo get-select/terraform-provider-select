@@ -26,6 +26,7 @@ func snowflakeAccountEndpoint(id string) string {
 var snowflakeAccountErrors = v2ErrorFormat{
 	Noun:       "Snowflake Account",
 	Subject:    "the account",
+	Object:     "the Snowflake account",
 	Plural:     "Snowflake accounts",
 	ReadScope:  "snowflake_accounts:read",
 	WriteScope: "snowflake_accounts:write",
@@ -301,25 +302,20 @@ func applySnowflakeAccountResponse(
 // them, an explanation of the ETag contract for a precondition failure, and the
 // problem document's detail otherwise.
 func snowflakeAccountAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
-	if diagnostic := v2ValidationDiagnostic("Snowflake Account Validation Failed", operation, apiErr); diagnostic != nil {
-		return diagnostic
-	}
+	return snowflakeAccountErrors.diagnostic(operation, apiErr, snowflakeAccountSpecificDiagnostic)
+}
 
-	switch apiErr.StatusCode {
-	case http.StatusPreconditionFailed:
-		return snowflakeAccountErrors.preconditionFailed(operation, apiErr)
-	case http.StatusPreconditionRequired:
-		return snowflakeAccountErrors.preconditionRequired(operation, apiErr)
-	case http.StatusConflict:
-		return diag.NewErrorDiagnostic(
-			"Snowflake Account Already Added",
-			fmt.Sprintf("SELECT could not %s because the account is already connected. "+
-				"Bring it under Terraform with `terraform import` instead of adding it again.\n\n%s",
-				operation, apiErr.Detail),
-		)
-	case http.StatusForbidden:
-		return snowflakeAccountErrors.forbidden(operation, apiErr)
-	default:
-		return snowflakeAccountErrors.unexpected(operation, apiErr)
+// snowflakeAccountSpecificDiagnostic is this resource's own opinion about an API
+// failure: SELECT supports at most one connection per Snowflake account, unlike
+// every status this resource shares with the rest of the v2 surface.
+func snowflakeAccountSpecificDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
+	if apiErr.StatusCode != http.StatusConflict {
+		return nil
 	}
+	return diag.NewErrorDiagnostic(
+		"Snowflake Account Already Added",
+		fmt.Sprintf("SELECT could not %s because the account is already connected. "+
+			"Bring it under Terraform with `terraform import` instead of adding it again.\n\n%s",
+			operation, apiErr.Detail),
+	)
 }
