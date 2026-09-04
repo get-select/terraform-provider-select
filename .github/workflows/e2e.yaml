@@ -77,14 +77,22 @@ jobs:
       # other three.
       fail-fast: false
       matrix:
-        platform: [snowflake, databricks, bigquery, aws]
+        # snowflake is excluded for now: SELECT enforces one global claim per
+        # Snowflake organization across every SELECT org, not per-account, and
+        # every Snowflake test account we have access to is already claimed by
+        # a different org. `make test-snowflake` still works locally once a
+        # dedicated, unclaimed fixture exists — see the TF_VAR_snowflake_*
+        # variables below, which stay wired up for when that happens.
+        platform: [databricks, bigquery, aws]
 
     env:
       TF_VAR_select_api_key: ${{ secrets.TF_E2E_SELECT_API_KEY }}
       TF_VAR_select_organization_id: ${{ secrets.TF_E2E_SELECT_ORG_ID }}
       TF_VAR_select_api_url: ${{ vars.TF_E2E_SELECT_API_URL || 'https://api.select.dev' }}
 
-      # Snowflake. The account identifier is the resource's own id and cannot
+      # Snowflake. Not in the matrix above right now (see the comment there),
+      # but left wired up so re-adding it is a one-line change once a fixture
+      # exists. The account identifier is the resource's own id and cannot
       # carry the run prefix; the display name does, which is what the sweep
       # matches on.
       TF_VAR_snowflake_account_id: ${{ secrets.E2E_SNOWFLAKE_ACCOUNT_CONNECTION_IDENTIFIER }}

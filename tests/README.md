@@ -90,14 +90,23 @@ account, so the grant lives in the target GCP project's IAM, not here.
 
 ## In CI
 
-`.github/workflows/e2e.yaml` runs all four suites as a matrix against the
-deployed API using a dedicated test organization. Credentials come from GitHub
-secrets mapped to the `TF_VAR_` names above — the same mechanism the select
-repo's `test-e2e.yaml` uses, though every secret here is its own copy rather
-than shared with it. select's equivalents are named `E2E_CREATE_*` because it
-also runs e2e tests against *pre-existing* Snowflake connections (so `CREATE_`
-distinguishes the ones its create-flow test provisions); this repo never has
-that second kind, so its names drop the `CREATE_`.
+`.github/workflows/e2e.yaml` runs three of the four suites as a matrix against
+the deployed API using a dedicated test organization — Databricks, BigQuery and
+AWS. Credentials come from GitHub secrets mapped to the `TF_VAR_` names above —
+the same mechanism the select repo's `test-e2e.yaml` uses, though every secret
+here is its own copy rather than shared with it. select's equivalents are named
+`E2E_CREATE_*` because it also runs e2e tests against *pre-existing* Snowflake
+connections (so `CREATE_` distinguishes the ones its create-flow test
+provisions); this repo never has that second kind, so its names drop the
+`CREATE_`.
+
+**Snowflake is excluded from the matrix for now.** SELECT enforces one global
+claim per Snowflake organization across every SELECT org, not per-account, and
+every Snowflake test account currently available is already claimed by a
+different org — adding it under ours fails with `409 Unable to add Snowflake
+account`, not anything this provider or CI can fix. `make test-snowflake` still
+works locally once a dedicated, unclaimed fixture exists, and the matrix entry
+is a one-line change at that point.
 
 Two things keep runs from tripping over each other:
 
