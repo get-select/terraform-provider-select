@@ -1,0 +1,62 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+A BigQuery connection is how SELECT reads one GCP project's BigQuery usage and spend: the billing and pricing export it reads, and the service account it impersonates to reach the project. To learn more, see the [SELECT documentation](https://select.dev/docs/getting-started).
+
+This resource is backed by SELECT's v2 API. The `api_key` configured on the provider must carry the `bigquery_connections:read` and `bigquery_connections:write` scopes; without them every operation fails with an authorization error.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the connection's ID in SELECT:
+
+```bash
+terraform import {{ .Name }}.example 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+The ID is assigned by SELECT when the connection is added, so there is nothing about your GCP project that predicts it. It is the `id` attribute, and it is also the last path segment of the connection's page in the SELECT UI.
+
+A connection reached without service account impersonation has no `service_account` on the API side, which this resource treats as required — set one in your configuration before importing a connection like that, or the first plan will show it as a change from null to a value.
+
+## Additional Information
+
+### DoiT-managed connections are out of scope
+
+SELECT can read a project's spend from DoiT's own billing data instead of an export in your project, but adding a connection like that needs a signed-in user's credential, which an API key is not. This resource has no `is_doit` attribute and cannot create, import, or manage a DoiT-managed connection; `bigquery_dataset_id` and `billing_account_id` are always required, matching an ordinary customer-owned connection.
+
+### Creating a connection validates it against BigQuery
+
+SELECT runs a full set of checks — connectivity, project access, region and job discovery, and the billing and pricing exports — before it stores anything. A create that fails leaves no connection behind, and the error names the checks that did not pass along with what to change and the documentation page covering it.
+
+This means `terraform apply` needs a service account and export that actually work, and that a GCP outage will fail the apply rather than store a broken connection.
+
+### Which changes revalidate
+
+SELECT revalidates whenever an apply changes `gcp_project_id`, `bigquery_dataset_id`, `billing_account_id` or `service_account`. Changing only `name`, `sync_enabled` or `query_sanitization_enabled` makes no call to BigQuery, so a rename works even when BigQuery does not.
+
+A successful revalidation re-resolves `gcp_organization_id`, `gcp_organization_name` and `regions`.
+
+### One connection per GCP project
+
+SELECT allows one connection per GCP project; a second one for the same project is refused with a conflict naming it. Bring the existing connection under Terraform with `terraform import` instead of adding another.
+
+### `billing_account_id` is stored upper case
+
+SELECT normalizes the Cloud Billing account ID to upper case regardless of how it was configured, so a lower-case value in your configuration does not mean a lower-case value in state — this resource tracks your configured casing without treating the difference as drift.
+
+### Changes made outside Terraform
+
+Every write carries the connection's `etag` as an `If-Match` header, so an update or delete is refused if the connection changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.
+
+### Deleting a connection is not reversible
+
+Destroying this resource removes the connection and the usage data SELECT has collected through it. Re-adding the same project starts its history over.

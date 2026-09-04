@@ -448,6 +448,22 @@ func preserveEquivalentNumber(configured types.Number, returned *float64) types.
 	return numberValue(returned)
 }
 
+// preserveEquivalentFold keeps the configured spelling of a field the API folds
+// to a canonical case, when the two are equal case-insensitively. Without this a
+// configured value that differs from the API's casing only would fail every
+// apply with an inconsistent-result error, the same class of bug
+// preserveEquivalentJSON and preserveEquivalentNumber exist to prevent for their
+// own fields.
+func preserveEquivalentFold(configured types.String, returned *string) types.String {
+	if returned == nil || configured.IsNull() || configured.IsUnknown() {
+		return stringValue(returned)
+	}
+	if strings.EqualFold(configured.ValueString(), *returned) {
+		return configured
+	}
+	return types.StringValue(*returned)
+}
+
 type VersionResponse struct {
 	Id               string `json:"id"`
 	CreatedAt        string `json:"created_at"`

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-snowflake test-databricks test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+.PHONY: codegen build install clean reset test test-go test-all test-snowflake test-databricks test-bigquery test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 # The provider is generated from two OpenAPI documents: the v1 public API
 # (openapi.public.json) and the v2 API (openapi.v2.json), which is a separate
 # FastAPI app with its own document. Each needs its own generator config and its
@@ -130,6 +130,19 @@ test-databricks:
 	@echo "Running Databricks connection tests against a real Databricks account..."
 	cd tests && terraform test databricks_connection.tftest.hcl
 
+# BigQuery connection tests, which manage a real connection: creating one makes
+# SELECT validate the configuration against BigQuery, so these need a GCP
+# project and service account that work and are kept out of `make test`.
+#
+# Required environment:
+#   TF_VAR_select_api_key      an API key with bigquery_connections:read and :write
+#   TF_VAR_select_organization_id
+#   TF_VAR_bigquery_gcp_project_id, TF_VAR_bigquery_dataset_id,
+#   TF_VAR_bigquery_billing_account_id, TF_VAR_bigquery_service_account
+test-bigquery:
+	@echo "Running BigQuery connection tests against a real GCP project..."
+	cd tests && terraform test bigquery_connection.tftest.hcl
+
 test-clean:
 	@echo "Cleaning up test resources..."
 	@echo "Removing test state files..."
@@ -138,8 +151,8 @@ test-clean:
 	find tests/ -name ".terraform.lock.hcl" -delete
 	@echo "Test cleanup complete!"
 
-# Convenience alias. Excludes test-snowflake and test-databricks, which need real
-# credentials for the system being connected.
+# Convenience alias. Excludes test-snowflake, test-databricks and test-bigquery,
+# which need real credentials for the system being connected.
 test: test-go test-all
 
 docs:
@@ -186,6 +199,7 @@ help:
 	@echo "  test             - Run test-go and test-all"
 	@echo "  test-snowflake   - Run Snowflake account tests (needs real Snowflake credentials)"
 	@echo "  test-databricks  - Run Databricks connection tests (needs real Databricks credentials)"
+	@echo "  test-bigquery    - Run BigQuery connection tests (needs a real GCP project and service account)"
 	@echo "  test-clean       - Clean up test resources and state files"
 	@echo ""
 	@echo "Run individual tests with:"

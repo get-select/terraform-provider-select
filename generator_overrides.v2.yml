@@ -159,3 +159,65 @@ resources:
         use_state_for_unknown: true
       create_time:
         use_state_for_unknown: true
+
+  bigquery_connection:
+    description: >-
+      A connection to one BigQuery project: the project and dataset SELECT reads,
+      the billing account its exports belong to, and the service account it
+      impersonates to reach them.
+
+    description_sources:
+      - BigQueryConnectionCreate
+      - BigQueryConnection
+
+    attributes:
+      # SELECT stores each of these exactly as given and returns it unchanged.
+      #
+      # The generator makes them optional+computed because they appear in both
+      # the request and the response, but optional+computed means a null in the
+      # configuration keeps whatever state already holds — so removing one of
+      # these from a configuration would silently do nothing instead of
+      # reaching the API as the null that clearing it requires (the same fix
+      # already applied to the Snowflake account resource, for the same
+      # reason). Plain optional is what makes a removal reach the API at all.
+      # A connection this resource can create is never DoiT-managed (is_doit
+      # is out of scope — see generator_config.v2.yml), so the API will always
+      # reject clearing either field; a rejected request is still a real
+      # signal, where a silent no-op is none.
+      # The OpenAPI pattern for this field is `^[a-zA-Z0-9_]{1,1024}$`. Go's
+      # regexp package refuses to compile a repeat count above 1000 (RE2's
+      # limit), which crashes the provider on startup rather than merely
+      # failing one plan. Capping the client-side pattern at some smaller
+      # number would validate a bound the API does not actually enforce, so
+      # the length is dropped here and left entirely to the API, keeping only
+      # the part of the rule Go can check: the character class.
+      bigquery_dataset_id:
+        computed_optional_required: optional
+        validators:
+          - custom:
+              imports:
+                - path: regexp
+                - path: github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator
+              schema_definition: stringvalidator.RegexMatches(regexp.MustCompile("^[a-zA-Z0-9_]+$"), "")
+      billing_account_id:
+        computed_optional_required: optional
+
+      # SELECT assigns or resolves each of these once and does not change it on an
+      # unrelated update. Holding them from state keeps them out of "known after
+      # apply" on every other change.
+      #
+      # Deliberately not listed: etag and update_time, which change by design;
+      # gcp_organization_id, gcp_organization_name and regions, which re-resolve
+      # whenever an access-related update revalidates against BigQuery (unlike
+      # Snowflake's equivalent fields, gcp_project_id is mutable in place here, so
+      # these can genuinely move); doit_billing_status and
+      # last_successful_sync_time, which move as SELECT confirms access and syncs
+      # run.
+      id:
+        use_state_for_unknown: true
+      connection_id:
+        use_state_for_unknown: true
+      added_by_email:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
