@@ -24,6 +24,7 @@ func databricksConnectionEndpoint(id string) string {
 var databricksConnectionErrors = v2ErrorFormat{
 	Noun:       "Databricks Connection",
 	Subject:    "the connection",
+	Object:     "the Databricks connection",
 	Plural:     "Databricks connections",
 	ReadScope:  "databricks_connections:read",
 	WriteScope: "databricks_connections:write",
@@ -124,26 +125,17 @@ func buildDatabricksConnectionCreate(plan *resource_databricks_connection.Databr
 // buildDatabricksConnectionUpdate carries only the fields whose configured value
 // differs from what state records. See databricksConnectionUpdatePayload.
 func buildDatabricksConnectionUpdate(plan, state *resource_databricks_connection.DatabricksConnectionModel) *databricksConnectionUpdatePayload {
-	payload := &databricksConnectionUpdatePayload{}
+	payload := &databricksConnectionUpdatePayload{
+		Name:                     changedString(plan.Name, state.Name),
+		PrimaryWorkspaceUrl:      changedString(plan.PrimaryWorkspaceUrl, state.PrimaryWorkspaceUrl),
+		WarehouseId:              changedString(plan.WarehouseId, state.WarehouseId),
+		SyncEnabled:              changedBool(plan.SyncEnabled, state.SyncEnabled),
+		QuerySanitizationEnabled: changedBool(plan.QuerySanitizationEnabled, state.QuerySanitizationEnabled),
+	}
 
-	if !plan.Name.Equal(state.Name) {
-		payload.Name = stringPointer(plan.Name)
-	}
-	if !plan.PrimaryWorkspaceUrl.Equal(state.PrimaryWorkspaceUrl) {
-		payload.PrimaryWorkspaceUrl = stringPointer(plan.PrimaryWorkspaceUrl)
-	}
-	if !plan.WarehouseId.Equal(state.WarehouseId) {
-		payload.WarehouseId = stringPointer(plan.WarehouseId)
-	}
 	if !plan.Credentials.Equal(state.Credentials) {
 		credentials := buildDatabricksCredentials(plan.Credentials)
 		payload.Credentials = &credentials
-	}
-	if !plan.SyncEnabled.Equal(state.SyncEnabled) {
-		payload.SyncEnabled = boolPointer(plan.SyncEnabled)
-	}
-	if !plan.QuerySanitizationEnabled.Equal(state.QuerySanitizationEnabled) {
-		payload.QuerySanitizationEnabled = boolPointer(plan.QuerySanitizationEnabled)
 	}
 
 	return payload
@@ -193,40 +185,33 @@ func applyDatabricksConnectionResponse(
 // against Databricks, an explanation of the ETag contract for a precondition
 // failure, and the problem document's detail otherwise.
 func databricksConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
-	if diagnostic := v2ValidationDiagnostic("Databricks Connection Validation Failed", operation, apiErr); diagnostic != nil {
-		return diagnostic
-	}
+	return databricksConnectionErrors.diagnostic(operation, apiErr, databricksConnectionSpecificDiagnostic)
+}
 
-	switch apiErr.StatusCode {
-	case http.StatusPreconditionFailed:
-		return databricksConnectionErrors.preconditionFailed(operation, apiErr)
-	case http.StatusPreconditionRequired:
-		return databricksConnectionErrors.preconditionRequired(operation, apiErr)
-	case http.StatusConflict:
-		// A 409 here is either "this account and region, or this metastore, is
-		// already connected" or "this connection has no usable credentials". The
-		// remedies have nothing in common, so branch on the issue rather than
-		// guessing from the status.
-		switch apiErr.issue() {
-		case issueMetastoreAlreadyConnected, issueRegionAlreadyConnected:
-			return diag.NewErrorDiagnostic(
-				"Databricks Connection Already Exists",
-				fmt.Sprintf("SELECT could not %s because this Databricks account and region are already "+
-					"connected. SELECT supports one connection per account per region; bring the existing "+
-					"one under Terraform with `terraform import` instead of adding it again.\n\n%s",
-					operation, apiErr.Detail),
-			)
-		default:
-			return diag.NewErrorDiagnostic(
-				"Databricks Credentials Required",
-				fmt.Sprintf("SELECT could not %s because the connection has no usable credentials stored. "+
-					"Set the `credentials` block so this apply supplies them.\n\n%s",
-					operation, apiErr.Detail),
-			)
-		}
-	case http.StatusForbidden:
-		return databricksConnectionErrors.forbidden(operation, apiErr)
+// databricksConnectionSpecificDiagnostic is this resource's own opinion about an
+// API failure: a 409 here is either "this account and region, or this
+// metastore, is already connected" or "this connection has no usable
+// credentials". The remedies have nothing in common, so branch on the issue
+// rather than guessing from the status.
+func databricksConnectionSpecificDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
+	if apiErr.StatusCode != http.StatusConflict {
+		return nil
+	}
+	switch apiErr.issue() {
+	case issueMetastoreAlreadyConnected, issueRegionAlreadyConnected:
+		return diag.NewErrorDiagnostic(
+			"Databricks Connection Already Exists",
+			fmt.Sprintf("SELECT could not %s because this Databricks account and region are already "+
+				"connected. SELECT supports one connection per account per region; bring the existing "+
+				"one under Terraform with `terraform import` instead of adding it again.\n\n%s",
+				operation, apiErr.Detail),
+		)
 	default:
-		return databricksConnectionErrors.unexpected(operation, apiErr)
+		return diag.NewErrorDiagnostic(
+			"Databricks Credentials Required",
+			fmt.Sprintf("SELECT could not %s because the connection has no usable credentials stored. "+
+				"Set the `credentials` block so this apply supplies them.\n\n%s",
+				operation, apiErr.Detail),
+		)
 	}
 }
