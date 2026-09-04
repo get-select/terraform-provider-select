@@ -1,0 +1,75 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+A Databricks connection is how SELECT reads one Databricks account's usage and spend: the workspace it connects through, the SQL warehouse it runs its queries on, and the service principal it authenticates as. To learn more, see the [SELECT documentation](https://select.dev/docs/getting-started).
+
+This resource is backed by SELECT's v2 API. The `api_key` configured on the provider must carry the `databricks_connections:read` and `databricks_connections:write` scopes; without them every operation fails with an authorization error.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the connection's ID in SELECT:
+
+```bash
+terraform import {{ .Name }}.example 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+The ID is assigned by SELECT when the connection is added, so unlike a Snowflake account there is nothing about your Databricks setup that predicts it. It is the `id` attribute, and it is also the last path segment of the connection's page in the SELECT UI.
+
+An import cannot recover `credentials`: SELECT stores the client secret in a secret store and returns neither half of the pair on this resource. Put the credentials in your configuration before importing, and the first apply after the import will re-send them — which makes SELECT revalidate the connection against Databricks.
+
+## Additional Information
+
+### One connection per account per region
+
+SELECT reads a Databricks account through one workspace per region, and rejects a second connection covering the same ground. Two configurations are refused:
+
+- a workspace whose Unity Catalog metastore is already connected, and
+- a second connection for the same `databricks_account_id` in the same cloud and region.
+
+Covering an account that spans regions means one resource per region, each pointing at a workspace in that region.
+
+### Creating a connection validates it against Databricks
+
+SELECT runs four checks in order — connectivity, workspace discovery, system table access, and metastore resolution — before it stores anything. A create that fails leaves no connection behind, and the error names the check that stopped the run along with what to change and the documentation page covering it. A check is only reported as `skipped` when an earlier one already failed.
+
+This means `terraform apply` needs a service principal that actually works, and that a Databricks outage will fail the apply rather than store a broken connection.
+
+### Which changes revalidate
+
+SELECT revalidates whenever an apply changes `primary_workspace_url`, `warehouse_id` or `credentials`. Changing only `name`, `sync_enabled` or `query_sanitization_enabled` makes no call to Databricks, so a rename works even when Databricks does not.
+
+A successful revalidation re-resolves `metastore` and adds any newly discovered workspaces to `workspace_ids`. That list accumulates and never shrinks: a workspace that has gone quiet stays listed.
+
+### `databricks_account_id` cannot be changed
+
+The account a connection reads is fixed when the connection is added. Changing it forces Terraform to destroy the connection and create a new one, which starts the account's usage history over.
+
+### Changes made outside Terraform
+
+Every write carries the connection's `etag` as an `If-Match` header, so an update or delete is refused if the connection changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.
+
+The ETag also moves when the connection is renamed or when `sync_enabled` is toggled, because both are stored on the underlying connection record. An update revalidates its ETag a second time after the round trip to Databricks, so a concurrent write that lands mid-request is refused rather than silently overwritten.
+
+### Rotating credentials
+
+`credentials` is only re-sent when the configured values change, so an apply that renames the connection does not rotate the stored secret or make SELECT reconnect. Rotation is atomic: `client_id` and `client_secret` move together, because SELECT has no way to change one without the other.
+
+SELECT never returns either value, so a change made outside Terraform is invisible to a refresh.
+
+### Connection names must be unique
+
+A connection name has to be unique among an organization's Databricks connections. SELECT does not currently translate that constraint into a helpful error — a duplicate name fails the apply with an opaque `HTTP 500` rather than a conflict naming the field.
+
+### Deleting a connection is not reversible
+
+Destroying this resource removes the connection and the usage data SELECT has collected through it. Re-adding the same account and workspace starts its history over.

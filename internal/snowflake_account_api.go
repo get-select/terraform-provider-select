@@ -4,10 +4,8 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"terraform-provider-select/internal/provider/resource_snowflake_account"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -23,14 +21,14 @@ func snowflakeAccountEndpoint(id string) string {
 	return fmt.Sprintf("%s/%s", snowflakeAccountsEndpoint, id)
 }
 
-// ifMatchHeader carries the account's ETag on a write. The API requires it: a
-// write without If-Match is refused with 428, and one carrying a stale value
-// with 412, so a change made outside Terraform cannot be silently overwritten.
-func ifMatchHeader(etag types.String) map[string]string {
-	if etag.IsNull() || etag.IsUnknown() {
-		return nil
-	}
-	return map[string]string{"If-Match": etag.ValueString()}
+// snowflakeAccountErrors words the failures every v2 resource can hit. See
+// v2_api.go.
+var snowflakeAccountErrors = v2ErrorFormat{
+	Noun:       "Snowflake Account",
+	Subject:    "the account",
+	Plural:     "Snowflake accounts",
+	ReadScope:  "snowflake_accounts:read",
+	WriteScope: "snowflake_accounts:write",
 }
 
 // snowflakeCredentialsPayload mirrors the API's SnowflakeCredentials. Every field
@@ -298,59 +296,20 @@ func applySnowflakeAccountResponse(
 	return diags
 }
 
-// snowflakeAccountValidationReport is the report the API attaches to the problem
-// document when a configuration fails its checks against Snowflake.
-type snowflakeAccountValidationReport struct {
-	Success bool `json:"success"`
-	Checks  []struct {
-		Id      string  `json:"id"`
-		Label   string  `json:"label"`
-		Status  string  `json:"status"`
-		Message *string `json:"message"`
-	} `json:"checks"`
-}
-
 // snowflakeAccountAPIDiagnostic turns an API failure into the most useful
 // diagnostic available for it: the failed validation checks when the API ran
 // them, an explanation of the ETag contract for a precondition failure, and the
 // problem document's detail otherwise.
 func snowflakeAccountAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
-	if report := parseSnowflakeAccountValidationReport(apiErr.Body); report != nil {
-		var lines []string
-		for _, check := range report.Checks {
-			if check.Status == "passed" {
-				continue
-			}
-			line := fmt.Sprintf("  - %s: %s", check.Label, check.Status)
-			if check.Message != nil && *check.Message != "" {
-				line = fmt.Sprintf("  - %s: %s", check.Label, *check.Message)
-			}
-			lines = append(lines, line)
-		}
-		if len(lines) > 0 {
-			return diag.NewErrorDiagnostic(
-				"Snowflake Account Validation Failed",
-				fmt.Sprintf("SELECT could not %s. These checks did not pass:\n%s",
-					operation, strings.Join(lines, "\n")),
-			)
-		}
+	if diagnostic := v2ValidationDiagnostic("Snowflake Account Validation Failed", operation, apiErr); diagnostic != nil {
+		return diagnostic
 	}
 
 	switch apiErr.StatusCode {
 	case http.StatusPreconditionFailed:
-		return diag.NewErrorDiagnostic(
-			"Snowflake Account Changed Outside Terraform",
-			fmt.Sprintf("SELECT could not %s because the account has changed since Terraform last read it. "+
-				"Run `terraform apply -refresh-only` to pick up the current state, then apply again.\n\n%s",
-				operation, apiErr.Detail),
-		)
+		return snowflakeAccountErrors.preconditionFailed(operation, apiErr)
 	case http.StatusPreconditionRequired:
-		return diag.NewErrorDiagnostic(
-			"Missing Snowflake Account ETag",
-			fmt.Sprintf("SELECT could not %s because Terraform holds no ETag for it. "+
-				"Run `terraform apply -refresh-only` to record one, then apply again.\n\n%s",
-				operation, apiErr.Detail),
-		)
+		return snowflakeAccountErrors.preconditionRequired(operation, apiErr)
 	case http.StatusConflict:
 		return diag.NewErrorDiagnostic(
 			"Snowflake Account Already Added",
@@ -359,26 +318,8 @@ func snowflakeAccountAPIDiagnostic(operation string, apiErr *apiError) diag.Diag
 				operation, apiErr.Detail),
 		)
 	case http.StatusForbidden:
-		return diag.NewErrorDiagnostic(
-			"Insufficient API Key Scopes",
-			fmt.Sprintf("SELECT could not %s. Managing Snowflake accounts needs an API key with the "+
-				"snowflake_accounts:read and snowflake_accounts:write scopes.\n\n%s",
-				operation, apiErr.Detail),
-		)
+		return snowflakeAccountErrors.forbidden(operation, apiErr)
 	default:
-		return diag.NewErrorDiagnostic(
-			"Snowflake Account API Error",
-			fmt.Sprintf("SELECT could not %s: %s", operation, apiErr.Error()),
-		)
+		return snowflakeAccountErrors.unexpected(operation, apiErr)
 	}
-}
-
-func parseSnowflakeAccountValidationReport(body string) *snowflakeAccountValidationReport {
-	var problem struct {
-		ValidationReport *snowflakeAccountValidationReport `json:"validation_report"`
-	}
-	if err := json.Unmarshal([]byte(body), &problem); err != nil {
-		return nil
-	}
-	return problem.ValidationReport
 }
