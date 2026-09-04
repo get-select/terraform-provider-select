@@ -6,22 +6,23 @@
 # SELECT validate the configuration against Databricks for real: the service
 # principal has to work, and the connection is added to and removed from the
 # target organization. Run with `make test-databricks` once the
-# TF_VAR_databricks_* variables are set.
+# TF_VAR_databricks_* variables are set, or let CI run it from the credentials it
+# holds as secrets.
 #
 # The workspace URL rule and the payload-shaping rules are checked before
 # anything reaches the API and are covered by the Go tests in internal/, so they
 # are not repeated here. What only a live run can show is that the connection
-# round-trips: that the values SELECT discovers land in state, and that an update
-# is an update rather than a replacement.
-#
-# Commented out for now: wiring this into CI needs a dedicated Databricks test
-# account and a service principal stored as CI secrets, which is being done as a
-# separate follow-up. `make test-databricks` remains available for a manual local
-# run against your own test account in the meantime.
+# round-trips: that the values SELECT discovers land in state, that an update is
+# an update rather than a replacement, and that removing the connection reaches
+# the API rather than only leaving state.
 
-/*
 variables {
   enable_databricks_connection_tests = true
+  # This suite shares tests/main.tf's root module with provider.tftest.hcl, so
+  # every apply here would otherwise also create the usage group set/group
+  # resources that file needs — resources this suite's API key isn't scoped for
+  # and has nothing to do with anyway.
+  enable_usage_group_tests = false
 }
 
 # The connection is added with everything SELECT resolved from Databricks, and
@@ -80,16 +81,16 @@ run "rename_databricks_connection" {
   command = apply
 
   variables {
-    databricks_connection_name = "terraform-test-databricks-connection-renamed"
+    databricks_connection_name_suffix = "-renamed"
   }
 
   assert {
-    condition     = select_databricks_connection.test[0].name == "terraform-test-databricks-connection-renamed"
+    condition     = select_databricks_connection.test[0].name == "${var.databricks_connection_name}-renamed"
     error_message = "The connection should have been renamed in place"
   }
 
   assert {
-    condition     = select_databricks_connection.test[0].id != ""
+    condition     = select_databricks_connection.test[0].id == run.create_databricks_connection.databricks_connection_id
     error_message = "A rename should not replace the connection"
   }
 }
@@ -100,8 +101,8 @@ run "disable_sync" {
   command = apply
 
   variables {
-    databricks_connection_name = "terraform-test-databricks-connection-renamed"
-    databricks_sync_enabled    = false
+    databricks_connection_name_suffix = "-renamed"
+    databricks_sync_enabled           = false
   }
 
   assert {
@@ -109,4 +110,22 @@ run "disable_sync" {
     error_message = "sync_enabled should follow the configuration"
   }
 }
-*/
+
+# Taking the connection out of the configuration destroys it. Terraform tears
+# down whatever is left at the end of the file either way, but that teardown
+# asserts nothing and swallows what it cannot remove; doing it as a run block
+# means a delete the API refuses fails the test.
+run "delete_databricks_connection" {
+  command = apply
+
+  variables {
+    databricks_connection_name_suffix  = "-renamed"
+    databricks_sync_enabled            = false
+    enable_databricks_connection_tests = false
+  }
+
+  assert {
+    condition     = length(select_databricks_connection.test) == 0
+    error_message = "The connection should have been destroyed"
+  }
+}

@@ -22,6 +22,25 @@ variable "select_organization_id" {
   type        = string
 }
 
+# Which SELECT API the tests apply against. A local run defaults to a backend on
+# localhost; CI points this at the deployed API. Switching between them is an
+# environment variable rather than an edit here.
+variable "select_api_url" {
+  description = "Base URL of the SELECT API the tests run against"
+  type        = string
+  default     = "http://localhost:8000"
+}
+
+# Whether to manage the usage group set/group resources below. Default true so
+# provider.tftest.hcl and `make test`/`test-all` are unaffected; each connection
+# suite sets this false in its own file, since it shares this root module but
+# has nothing to do with usage groups.
+variable "enable_usage_group_tests" {
+  description = "Whether to manage the usage group set/group test resources"
+  type        = bool
+  default     = true
+}
+
 # Test-specific variables with defaults
 variable "usage_group_set_name" {
   description = "Name for the usage group set"
@@ -96,6 +115,15 @@ variable "snowflake_account_name" {
   default     = "terraform-test-account"
 }
 
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "snowflake_account_name_suffix" {
+  description = "Appended to the Snowflake account name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
+}
+
 variable "snowflake_username" {
   description = "Snowflake user SELECT connects as"
   type        = string
@@ -149,6 +177,15 @@ variable "databricks_connection_name" {
   description = "Display name for the Databricks connection in SELECT"
   type        = string
   default     = "terraform-test-databricks-connection"
+}
+
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "databricks_connection_name_suffix" {
+  description = "Appended to the Databricks connection name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
 }
 
 variable "databricks_account_id" {
@@ -206,6 +243,15 @@ variable "bigquery_connection_name" {
   default     = "terraform-test-bigquery-connection"
 }
 
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "bigquery_connection_name_suffix" {
+  description = "Appended to the BigQuery connection name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
+}
+
 variable "bigquery_gcp_project_id" {
   description = "GCP project SELECT reads BigQuery usage and spend from"
   type        = string
@@ -252,6 +298,15 @@ variable "aws_connection_name" {
   description = "Display name for the AWS connection in SELECT"
   type        = string
   default     = "terraform-test-aws-connection"
+}
+
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "aws_connection_name_suffix" {
+  description = "Appended to the AWS connection name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
 }
 
 variable "aws_payer_account_id" {
@@ -301,18 +356,32 @@ variable "aws_sync_enabled" {
 provider "select" {
   api_key         = var.select_api_key
   organization_id = var.select_organization_id
-  # You could move this to a variable if you wanted to run tests against staging or something
-  select_api_url = "http://localhost:8000"
+  select_api_url  = var.select_api_url
 }
+
+# count keeps these six out of the way of the connection suites: each one
+# manages a real connection and shares this root module with provider.tftest.hcl,
+# so an apply triggered by any run — in any file — creates every unconditional
+# resource here regardless of which file asked for it. A connection suite's API
+# key is scoped only to its own resource type, so an ungated usage group set
+# 403s on "Insufficient scope"; even a fully-scoped key would then hit
+# test_team's hardcoded team_id, which exists in whatever org this was
+# originally built against but not in a fresh one. Neither is a real dependency
+# these suites have, so enable_usage_group_tests just turns them off instead of
+# working around it.
 
 # Usage group set with SELECT organization scope
 resource "select_usage_group_set" "test_org" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name  = var.usage_group_set_name
   order = var.usage_group_set_order
 }
 
 # Usage group set with team scope
 resource "select_usage_group_set" "test_team" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name    = "${var.usage_group_set_name}-team"
   order   = 2
   team_id = var.test_team_id
@@ -320,6 +389,8 @@ resource "select_usage_group_set" "test_team" {
 
 # Usage group set with SELECT organization scope (no scope fields)
 resource "select_usage_group_set" "test_select_org" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name  = "${var.usage_group_set_name}-select-org"
   order = 3
   # No scope fields = SELECT organization scope
@@ -327,28 +398,34 @@ resource "select_usage_group_set" "test_select_org" {
 
 # Basic usage group
 resource "select_usage_group" "test_basic" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name                   = var.usage_group_name
   order                  = var.usage_group_order
   budget                 = var.usage_group_budget
-  usage_group_set_id     = select_usage_group_set.test_org.id
+  usage_group_set_id     = select_usage_group_set.test_org[0].id
   filter_expression_json = var.simple_filter_expression_json
 }
 
 # Usage group with budget
 resource "select_usage_group" "test_with_budget" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name                   = "${var.usage_group_name}-with-budget"
   order                  = var.usage_group_order + 1
   budget                 = 100.0
-  usage_group_set_id     = select_usage_group_set.test_org.id
+  usage_group_set_id     = select_usage_group_set.test_org[0].id
   filter_expression_json = var.simple_filter_expression_json
 }
 
 # Usage group with complex filter
 resource "select_usage_group" "test_complex_filter" {
+  count = var.enable_usage_group_tests ? 1 : 0
+
   name                   = "${var.usage_group_name}-complex"
   order                  = var.usage_group_order + 2
   budget                 = null
-  usage_group_set_id     = select_usage_group_set.test_org.id
+  usage_group_set_id     = select_usage_group_set.test_org[0].id
   filter_expression_json = var.complex_filter_expression_json
 }
 
@@ -359,7 +436,7 @@ resource "select_snowflake_account" "test" {
   count = var.enable_snowflake_account_tests ? 1 : 0
 
   id   = var.snowflake_account_id
-  name = var.snowflake_account_name
+  name = "${var.snowflake_account_name}${var.snowflake_account_name_suffix}"
 
   credentials = {
     authentication_method = "key_pair"
@@ -380,7 +457,7 @@ resource "select_snowflake_account" "test" {
 resource "select_databricks_connection" "test" {
   count = var.enable_databricks_connection_tests ? 1 : 0
 
-  name = var.databricks_connection_name
+  name = "${var.databricks_connection_name}${var.databricks_connection_name_suffix}"
 
   databricks_account_id = var.databricks_account_id
   primary_workspace_url = var.databricks_workspace_url
@@ -400,7 +477,7 @@ resource "select_databricks_connection" "test" {
 resource "select_bigquery_connection" "test" {
   count = var.enable_bigquery_connection_tests ? 1 : 0
 
-  name = var.bigquery_connection_name
+  name = "${var.bigquery_connection_name}${var.bigquery_connection_name_suffix}"
 
   gcp_project_id      = var.bigquery_gcp_project_id
   bigquery_dataset_id = var.bigquery_dataset_id
@@ -416,7 +493,7 @@ resource "select_bigquery_connection" "test" {
 resource "select_aws_connection" "test" {
   count = var.enable_aws_connection_tests ? 1 : 0
 
-  name = var.aws_connection_name
+  name = "${var.aws_connection_name}${var.aws_connection_name_suffix}"
 
   payer_account_id = var.aws_payer_account_id
   s3_bucket        = var.aws_s3_bucket
@@ -431,35 +508,54 @@ resource "select_aws_connection" "test" {
   sync_enabled = var.aws_sync_enabled
 }
 
-# Outputs for verification
+# Outputs for verification. one() rather than [0]: these are unconditional, so
+# they're still evaluated — and would error on an out-of-range index — when a
+# connection suite runs with enable_usage_group_tests left at its default false.
 output "usage_group_set_id" {
-  value = select_usage_group_set.test_org.id
+  value = one(select_usage_group_set.test_org[*].id)
 }
 
 output "usage_group_set_name" {
-  value = select_usage_group_set.test_org.name
+  value = one(select_usage_group_set.test_org[*].name)
 }
 
 output "basic_usage_group_id" {
-  value = select_usage_group.test_basic.id
+  value = one(select_usage_group.test_basic[*].id)
 }
 
 output "basic_usage_group_name" {
-  value = select_usage_group.test_basic.name
+  value = one(select_usage_group.test_basic[*].name)
 }
 
 output "usage_group_with_budget_id" {
-  value = select_usage_group.test_with_budget.id
+  value = one(select_usage_group.test_with_budget[*].id)
 }
 
 output "usage_group_complex_filter_id" {
-  value = select_usage_group.test_complex_filter.id
+  value = one(select_usage_group.test_complex_filter[*].id)
 }
 
 output "team_usage_group_set_id" {
-  value = select_usage_group_set.test_team.id
+  value = one(select_usage_group_set.test_team[*].id)
 }
 
 output "select_org_usage_group_set_id" {
-  value = select_usage_group_set.test_select_org.id
+  value = one(select_usage_group_set.test_select_org[*].id)
+}
+
+# The ids SELECT assigned, so a later run block can assert an update kept the
+# same resource. one() returns null rather than failing when the corresponding
+# enable_* variable is off and the resource has no instances. Snowflake needs no
+# equivalent: its id is the account identifier the configuration supplies, so the
+# test compares against that directly.
+output "databricks_connection_id" {
+  value = one(select_databricks_connection.test[*].id)
+}
+
+output "bigquery_connection_id" {
+  value = one(select_bigquery_connection.test[*].id)
+}
+
+output "aws_connection_id" {
+  value = one(select_aws_connection.test[*].id)
 }

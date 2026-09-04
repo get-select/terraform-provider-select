@@ -1,0 +1,160 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# End-to-end tests for the connection resources.
+#
+# These apply against the deployed SELECT API using a dedicated test
+# organization, and each one manages a real connection: creating it makes SELECT
+# validate the configuration against Snowflake, Databricks, BigQuery or S3 for
+# real. Every suite deletes what it created before it finishes, so nothing is
+# left syncing.
+#
+# Credentials come from GitHub secrets, mapped to the TF_VAR_ variables
+# tests/main.tf declares — the same mechanism the select repo's test-e2e.yaml
+# uses, though every secret name here is specific to this repo rather than
+# shared with it. See tests/README.md for the full list.
+name: End-to-End Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    # Nightly, so a fixture that rots upstream is found before a PR trips over it.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+# One test organization and one set of upstream fixtures back every run, so runs
+# have to queue rather than overlap: a second run would collide on connection
+# names, and for Snowflake it must — the same account identifier cannot be added
+# to an organization twice. Queue rather than cancel; a cancelled run leaves
+# connections behind for the next one to clean up.
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+env:
+  # Scopes every connection this run creates to the run itself, which is what
+  # lets the post-run sweep clean up after a failure without reaching into
+  # anything else.
+  CI_RESOURCE_PREFIX: terraform-test-${{ github.run_id }}
+
+jobs:
+  # A run cancelled mid-apply leaves connections attached to the organization,
+  # and the name is then in use for good. This clears anything left by an earlier
+  # run before the matrix starts — it uses the bare prefix, so it must not run
+  # alongside the suites themselves.
+  sweep:
+    name: Sweep leftovers
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Nothing here pushes to the repo, so the default token never needs
+          # to survive past checkout.
+          persist-credentials: false
+
+      - name: Delete connections left by earlier runs
+        env:
+          SELECT_API_KEY: ${{ secrets.TF_E2E_SELECT_API_KEY }}
+          SELECT_ORGANIZATION_ID: ${{ secrets.TF_E2E_SELECT_ORG_ID }}
+          SELECT_API_URL: ${{ vars.TF_E2E_SELECT_API_URL || 'https://api.select.dev' }}
+          CI_RESOURCE_PREFIX: terraform-test
+        run: ./scripts/ci-cleanup-connections.sh
+
+  e2e:
+    name: ${{ matrix.platform }}
+    needs: sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Secrets are not available to a pull request from a fork, so the job would
+    # fail on a missing API key rather than on anything it was meant to test.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      # One broken upstream fixture should not hide a real regression in the
+      # other three.
+      fail-fast: false
+      matrix:
+        # snowflake is excluded for now: SELECT enforces one global claim per
+        # Snowflake organization across every SELECT org, not per-account, and
+        # every Snowflake test account we have access to is already claimed by
+        # a different org. `make test-snowflake` still works locally once a
+        # dedicated, unclaimed fixture exists — see the TF_VAR_snowflake_*
+        # variables below, which stay wired up for when that happens.
+        platform: [databricks, bigquery, aws]
+
+    env:
+      TF_VAR_select_api_key: ${{ secrets.TF_E2E_SELECT_API_KEY }}
+      TF_VAR_select_organization_id: ${{ secrets.TF_E2E_SELECT_ORG_ID }}
+      TF_VAR_select_api_url: ${{ vars.TF_E2E_SELECT_API_URL || 'https://api.select.dev' }}
+
+      # Snowflake. Not in the matrix above right now (see the comment there),
+      # but left wired up so re-adding it is a one-line change once a fixture
+      # exists. The account identifier is the resource's own id and cannot
+      # carry the run prefix; the display name does, which is what the sweep
+      # matches on.
+      TF_VAR_snowflake_account_id: ${{ secrets.E2E_SNOWFLAKE_ACCOUNT_CONNECTION_IDENTIFIER }}
+      TF_VAR_snowflake_account_name: terraform-test-${{ github.run_id }}-snowflake
+      TF_VAR_snowflake_username: ${{ secrets.E2E_SNOWFLAKE_ACCOUNT_CONNECTION_USER }}
+      TF_VAR_snowflake_private_key: ${{ secrets.E2E_SNOWFLAKE_ACCOUNT_CONNECTION_PRIVATE_KEY }}
+      TF_VAR_snowflake_role: ${{ secrets.TF_E2E_SNOWFLAKE_ROLE }}
+      TF_VAR_snowflake_warehouse: ${{ secrets.TF_E2E_SNOWFLAKE_WAREHOUSE }}
+      TF_VAR_snowflake_export_storage_integration_name: ${{ secrets.TF_E2E_SNOWFLAKE_STORAGE_INTEGRATION }}
+
+      # Databricks.
+      TF_VAR_databricks_connection_name: terraform-test-${{ github.run_id }}-databricks
+      TF_VAR_databricks_account_id: ${{ secrets.E2E_DATABRICKS_ACCOUNT_ID }}
+      TF_VAR_databricks_workspace_url: ${{ secrets.E2E_DATABRICKS_ACCOUNT_WORKSPACE_URL }}
+      TF_VAR_databricks_warehouse_id: ${{ secrets.E2E_DATABRICKS_ACCOUNT_WAREHOUSE_ID }}
+      TF_VAR_databricks_client_id: ${{ secrets.E2E_DATABRICKS_ACCOUNT_CLIENT_ID }}
+      TF_VAR_databricks_client_secret: ${{ secrets.E2E_DATABRICKS_ACCOUNT_CLIENT_SECRET }}
+
+      # BigQuery. The connection carries no credential of its own — access comes
+      # from the SELECT backend impersonating the service account named here, so
+      # that project's IAM has to grant it, not this runner.
+      TF_VAR_bigquery_connection_name: terraform-test-${{ github.run_id }}-bigquery
+      TF_VAR_bigquery_gcp_project_id: ${{ secrets.E2E_BIGQUERY_CONNECTION_PROJECT_ID }}
+      TF_VAR_bigquery_dataset_id: ${{ secrets.E2E_BIGQUERY_CONNECTION_DATASET_NAME }}
+      TF_VAR_bigquery_billing_account_id: ${{ secrets.E2E_BIGQUERY_CONNECTION_BILLING_ACCOUNT_ID }}
+      TF_VAR_bigquery_service_account: ${{ secrets.E2E_BIGQUERY_CONNECTION_SERVICE_ACCOUNT }}
+
+      # AWS.
+      TF_VAR_aws_connection_name: terraform-test-${{ github.run_id }}-aws
+      TF_VAR_aws_payer_account_id: ${{ secrets.TF_E2E_AWS_PAYER_ACCOUNT_ID }}
+      TF_VAR_aws_s3_bucket: ${{ secrets.TF_E2E_AWS_S3_BUCKET }}
+      TF_VAR_aws_s3_prefix: ${{ secrets.TF_E2E_AWS_S3_PREFIX }}
+      TF_VAR_aws_region: ${{ secrets.TF_E2E_AWS_REGION }}
+      TF_VAR_aws_access_key_id: ${{ secrets.TF_E2E_AWS_ACCESS_KEY_ID }}
+      TF_VAR_aws_secret_access_key: ${{ secrets.TF_E2E_AWS_SECRET_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # Nothing here pushes to the repo, so the default token never needs
+          # to survive past checkout.
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-provider
+
+      - name: Run ${{ matrix.platform }} tests
+        run: make test-${{ matrix.platform }}
+
+      # The suites delete what they create, so this finds nothing on a passing
+      # run. It matters when one fails partway: the connection would otherwise
+      # stay attached to the organization and hold its name.
+      #
+      # The prefix is narrowed to this leg. The four legs run concurrently and
+      # every connection in the run shares CI_RESOURCE_PREFIX, so sweeping on the
+      # run-wide prefix here would delete the other three legs' connections out
+      # from under them.
+      - name: Sweep this run's connections
+        if: always()
+        env:
+          SELECT_API_KEY: ${{ secrets.TF_E2E_SELECT_API_KEY }}
+          SELECT_ORGANIZATION_ID: ${{ secrets.TF_E2E_SELECT_ORG_ID }}
+          SELECT_API_URL: ${{ vars.TF_E2E_SELECT_API_URL || 'https://api.select.dev' }}
+          CI_RESOURCE_PREFIX: ${{ env.CI_RESOURCE_PREFIX }}-${{ matrix.platform }}
+        run: ./scripts/ci-cleanup-connections.sh
