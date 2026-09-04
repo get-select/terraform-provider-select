@@ -37,8 +37,9 @@ This ensures the provider stays in sync with SELECT's API automatically.
 | `select_snowflake_account` | v2 |
 | `select_databricks_connection` | v2 |
 | `select_bigquery_connection` | v2 |
+| `select_aws_connection` | v2 |
 
-Each v2 resource needs an API key carrying that resource's own scopes: `snowflake_accounts:read` and `snowflake_accounts:write` for Snowflake accounts, `databricks_connections:read` and `databricks_connections:write` for Databricks connections, `bigquery_connections:read` and `bigquery_connections:write` for BigQuery connections.
+Each v2 resource needs an API key carrying that resource's own scopes: `snowflake_accounts:read` and `snowflake_accounts:write` for Snowflake accounts, `databricks_connections:read` and `databricks_connections:write` for Databricks connections, `bigquery_connections:read` and `bigquery_connections:write` for BigQuery connections, `aws_accounts:read` and `aws_accounts:write` for AWS connections.
 
 ## Development Requirements
 
@@ -146,6 +147,8 @@ terraform-provider-select/
 │   ├── databricks_connection_api.go      # Its request payloads and conversions
 │   ├── bigquery_connection_resource.go   # BigQuery connection resource (v2 API)
 │   ├── bigquery_connection_api.go        # Its request payloads and conversions
+│   ├── aws_connection_resource.go        # AWS connection resource (v2 API)
+│   ├── aws_connection_api.go             # Its request payloads and conversions
 │   └── provider/               # Generated code (git-ignored)
 ├── tools/specpatch/            # Post-processor for the generated v2 code spec
 ├── tests/                      # Provider tests
@@ -193,11 +196,14 @@ make test-databricks
 
 # BigQuery connection tests, which manage a real connection
 make test-bigquery
+
+# AWS connection tests, which manage a real connection
+make test-aws
 ```
 
 **Note**: The Terraform tests require valid SELECT API credentials and will create/modify real resources.
 
-`make test-snowflake`, `make test-databricks` and `make test-bigquery` are separate from `make test` because adding a connection makes SELECT validate the configuration against Snowflake, Databricks or BigQuery for real: they need credentials that work, and the `TF_VAR_snowflake_*` / `TF_VAR_databricks_*` / `TF_VAR_bigquery_*` variables listed above each target in the `Makefile`.
+`make test-snowflake`, `make test-databricks`, `make test-bigquery` and `make test-aws` are separate from `make test` because adding a connection makes SELECT validate the configuration against Snowflake, Databricks, BigQuery or AWS for real: they need credentials that work, and the `TF_VAR_snowflake_*` / `TF_VAR_databricks_*` / `TF_VAR_bigquery_*` / `TF_VAR_aws_*` variables listed above each target in the `Makefile`.
 
 ## Documentation Generation
 

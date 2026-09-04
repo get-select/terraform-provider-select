@@ -124,5 +124,6 @@ func (p *selectProvider) Resources(ctx context.Context) []func() resource.Resour
 		NewSnowflakeAccountResource,
 		NewDatabricksConnectionResource,
 		NewBigQueryConnectionResource,
+		NewAwsConnectionResource,
 	}
 }

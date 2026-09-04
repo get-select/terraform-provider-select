@@ -25,6 +25,7 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `make test-snowflake` - Snowflake account tests; needs working Snowflake credentials, so it is excluded from `make test`
 - `make test-databricks` - Databricks connection tests; needs a working Databricks service principal, so it is excluded from `make test`
 - `make test-bigquery` - BigQuery connection tests; needs a working GCP project and service account, so it is excluded from `make test`
+- `make test-aws` - AWS connection tests; needs an AWS payer account with a working CUR delivery, so it is excluded from `make test`
 - `make test-clean` - Clean up test state files
 
 **Test Requirements**: Tests require environment variables:
@@ -63,6 +64,7 @@ Two limitations shape everything about the generator configs, and are easy to tr
 ```
 internal/
 ├── provider/               # Generated code (git-ignored, regenerated each build)
+│   ├── resource_aws_connection/
 │   ├── resource_bigquery_connection/
 │   ├── resource_databricks_connection/
 │   ├── resource_snowflake_account/
@@ -78,7 +80,9 @@ internal/
 ├── databricks_connection_resource.go # Databricks connection resource (v2 API)
 ├── databricks_connection_api.go      # Its request payloads, response mapping, and error formatting
 ├── bigquery_connection_resource.go   # BigQuery connection resource (v2 API)
-└── bigquery_connection_api.go        # Its request payloads, response mapping, and error formatting
+├── bigquery_connection_api.go        # Its request payloads, response mapping, and error formatting
+├── aws_connection_resource.go        # AWS connection resource (v2 API)
+└── aws_connection_api.go             # Its request payloads, response mapping, and error formatting
 ```
 
 ### How Resources Work
