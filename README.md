@@ -14,18 +14,29 @@ This provider is built using:
 - **[Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)** - Modern Terraform provider development
 - **[tfplugingen-openapi](https://github.com/hashicorp/terraform-plugin-codegen-openapi)** - OpenAPI to Terraform schema generation  
 - **[tfplugingen-framework](https://github.com/hashicorp/terraform-plugin-codegen-framework)** - Framework code generation
-- **SELECT's Public OpenAPI Spec** - Single source of truth hosted at `https://api.select.dev/public_openapi`
+- **SELECT's OpenAPI Specs** - Single source of truth, hosted at `https://api.select.dev/public_openapi` (v1) and `https://api.select.dev/v2/openapi.json` (v2)
 
 ### Code Generation Workflow
 
-The provider code is generated from SELECT's public OpenAPI specification:
+The provider code is generated from SELECT's OpenAPI specifications. SELECT's v2 API is a separate application with its own document, so each version has its own generator config and its own code spec:
 
-1. **Fetch OpenAPI Spec**: Downloads the latest spec from `https://api.select.dev/public_openapi`
-2. **Generate Schema**: `tfplugingen-openapi` converts OpenAPI spec to Terraform schema definitions
-3. **Generate Code**: `tfplugingen-framework` creates the final provider code
-4. **Manual Customization**: Configuration in `generator_config.yml` allows for customizations and overrides
+1. **Fetch OpenAPI Specs**: Downloads the latest v1 and v2 specs
+2. **Generate Schema**: `tfplugingen-openapi` converts each spec to Terraform schema definitions
+3. **Patch Schema**: `tools/specpatch` fills in what `tfplugingen-openapi` cannot produce for v2 — descriptions it drops for nullable fields, sensitive attributes, and plan modifiers
+4. **Generate Code**: `tfplugingen-framework` creates the final provider code
+5. **Manual Customization**: `generator_config*.yml` and `generator_overrides.v2.yml` allow for customizations and overrides
 
 This ensures the provider stays in sync with SELECT's API automatically.
+
+### Resources
+
+| Resource | API |
+| --- | --- |
+| `select_usage_group_set` | v1 |
+| `select_usage_group` | v1 |
+| `select_snowflake_account` | v2 |
+
+Managing Snowflake accounts needs an API key carrying the `snowflake_accounts:read` and `snowflake_accounts:write` scopes.
 
 ## Development Requirements
 
@@ -102,12 +113,18 @@ make setup-dev-overrides
 
 ## Configuration Files
 
-### `generator_config.yml`
-Configures the code generation process:
+### `generator_config.yml`, `generator_config.v2.yml`
+Configure the code generation process, one per API version:
 - Resource mappings (API endpoints to Terraform resources)
-- Schema overrides and customizations
-- Field descriptions and validation rules
+- Attribute aliases and descriptions
 - Ignored fields that don't map well to Terraform
+
+Note that `tfplugingen-openapi` only honours `description` in an attribute override — its `Override` struct has no other fields, and unknown YAML keys are dropped without an error.
+
+### `generator_overrides.v2.yml`
+Everything about the v2 schema that `generator_config.v2.yml` cannot express, applied to the generated code spec by `tools/specpatch`: the resource's description, which OpenAPI schemas to recover dropped attribute descriptions from, and per-attribute plan modifiers.
+
+Attribute sensitivity is deliberately absent from this file. `specpatch` derives it from the OpenAPI document's `x-terraform-sensitive` markers, and refuses to generate a write-only property that is not marked, so a new secret cannot reach plan output unmasked.
 
 ### `example.terraformrc`
 Template for Terraform development overrides that allows using the locally built provider instead of downloading from the registry.
@@ -120,31 +137,39 @@ terraform-provider-select/
 │   ├── provider.go             # Provider configuration and setup
 │   ├── api.go                  # HTTP client and API utilities
 │   ├── usage_group_resource.go # Custom resource implementations
+│   ├── snowflake_account_resource.go # Snowflake account resource (v2 API)
+│   ├── snowflake_account_api.go      # Its request payloads and conversions
 │   └── provider/               # Generated code (git-ignored)
+├── tools/specpatch/            # Post-processor for the generated v2 code spec
 ├── tests/                      # Provider tests
 ├── docs/                       # Generated documentation
 ├── examples/                   # Usage examples
-├── generator_config.yml        # Code generation configuration
+├── generator_config.yml        # v1 code generation configuration
+├── generator_config.v2.yml     # v2 code generation configuration
+├── generator_overrides.v2.yml  # v2 schema details codegen cannot express
 ├── Makefile                    # Development commands
 └── main.go                     # Provider entry point
 ```
 
 ## OpenAPI Dependency
 
-**Important**: This provider is entirely dependent on SELECT's public OpenAPI specification. The specification is:
+**Important**: This provider is entirely dependent on SELECT's OpenAPI specifications. They are:
 
-- **Hosted at**: `https://api.select.dev/public_openapi`
-- **Auto-fetched**: Every `make codegen` downloads the latest spec
+- **Hosted at**: `https://api.select.dev/public_openapi` (v1) and `https://api.select.dev/v2/openapi.json` (v2)
+- **Auto-fetched**: Every `make codegen` downloads the latest of both
 - **Single Source of Truth**: Changes to the API automatically reflect in the provider
 
-If the OpenAPI endpoint is unavailable, the code generation will fail. For offline development, you can work with a previously downloaded `openapi.public.json` file.
+If either endpoint is unavailable, the code generation will fail. For offline development, you can work with previously downloaded `openapi.public.json` and `openapi.v2.json` files and run `make codegen-go`, which skips the download.
 
 ## Testing
 
 The provider includes comprehensive tests that validate functionality against the live SELECT API:
 
 ```bash
-# Run all tests
+# Go unit tests, which need no API access
+make test-go
+
+# Go unit tests plus the Terraform provider tests
 make test
 
 # Run specific test files  
@@ -152,9 +177,14 @@ cd tests && terraform test provider.tftest.hcl
 
 # Run specific test cases
 cd tests && terraform test provider.tftest.hcl -filter=create_usage_group_set
+
+# Snowflake account tests, which manage a real connection
+make test-snowflake
 ```
 
-**Note**: Tests require valid SELECT API credentials and will create/modify real resources.
+**Note**: The Terraform tests require valid SELECT API credentials and will create/modify real resources.
+
+`make test-snowflake` is separate from `make test` because adding a Snowflake account makes SELECT validate the configuration against Snowflake for real: it needs credentials that work, and the `TF_VAR_snowflake_*` variables listed above the target in the `Makefile`.
 
 ## Documentation Generation
 

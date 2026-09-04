@@ -1,0 +1,54 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+A Snowflake account is SELECT's connection to one Snowflake account: the credentials it authenticates with, the role and warehouse it runs as, and how it exports data. To learn more, see the [SELECT documentation](https://select.dev/docs/getting-started).
+
+This resource is backed by SELECT's v2 API. The `api_key` configured on the provider must carry the `snowflake_accounts:read` and `snowflake_accounts:write` scopes; without them every operation fails with an authorization error.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the Snowflake account identifier:
+
+```bash
+terraform import {{ .Name }}.example acme-us-east-1
+```
+
+The identifier is the same `ORGANIZATION-ACCOUNT` value as the `id` attribute, in lower case with a `-` between the organization and account names.
+
+An import cannot recover `credentials`: SELECT stores them in a secret store and never returns them. Put the credentials in your configuration before importing, and the first apply after the import will re-send them.
+
+The same first plan may also show a whitespace-only change to `excluded_users_filter_expression`, because SELECT stores it as a JSON document and re-serializes it on the way out. Applying once settles it, and later plans are clean.
+
+## Additional Information
+
+### Creating an account validates it against Snowflake
+
+SELECT runs a full set of checks — connectivity, permissions, account identity — before it stores anything. A create that fails leaves no account behind, and the error names the checks that did not pass along with what to change. This means `terraform apply` needs credentials that actually work, and that a Snowflake outage will fail the apply rather than store a broken connection.
+
+### Changes made outside Terraform
+
+Every write carries the account's `etag` as an `If-Match` header, so an update or delete is refused if the account changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.
+
+### Deleting an account is not reversible
+
+Destroying this resource removes the connection and the usage data SELECT has collected through it. Re-adding the same account starts its history over.
+
+### Rotating and removing secrets
+
+`credentials` and `mode_token_secret` are only re-sent when their configured values change, so an apply that renames the account does not rotate the stored secret.
+
+SELECT will not clear a Mode token secret on its own. To disconnect Mode, remove `mode_workspace`; that clears the workspace, the token ID and the secret together.
+
+### Cost rate overrides
+
+`compute_cost_per_credit` and `storage_cost_per_tb` must be set together. They are required for accounts that cannot read organization-level rates from Snowflake, and otherwise SELECT uses the rates on the account's contract.

@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# Schema details tfplugingen-openapi cannot produce, applied to the generated
+# code spec by ./tools/specpatch. See that command's doc comment for why this
+# file exists rather than living in generator_config.v2.yml.
+#
+# Attribute sensitivity is deliberately absent: specpatch derives it from the
+# OpenAPI document's x-terraform-sensitive markers, so marking a new secret in
+# the API masks it here with no change to this file.
+#
+# description_sources are the OpenAPI schemas a resource's descriptions are
+# recovered from, in priority order. The generator drops the description of every
+# property written as a nullable union, which is most of them; listing the
+# request schema first means the wording a user reads describes the field as an
+# input.
+#
+# Keys per resource:
+#   description           - the resource's own description, which the generator omits
+#   description_sources   - see above
+#   attributes            - per-attribute overrides
+#
+# Keys per attribute:
+#   requires_replace      - add a RequiresReplace plan modifier for the attribute's type
+#   use_state_for_unknown - add a UseStateForUnknown plan modifier
+#   <anything else>       - set verbatim on the code spec attribute
+
+resources:
+  snowflake_account:
+    description: >-
+      A connection to one Snowflake account: the credentials SELECT authenticates
+      with, the role and warehouse it runs as, and how it exports data.
+
+    description_sources:
+      - SnowflakeAccountCreate
+      - SnowflakeAccount
+
+    attributes:
+      # The Snowflake identifier is chosen by the caller and rejected by the API
+      # if it changes, so a new value has to mean a new account.
+      id:
+        requires_replace: true
+
+      # These describe the Snowflake account itself rather than SELECT's
+      # configuration of it, so they cannot change while the id stays the same —
+      # and a new id forces replacement. Holding them from state keeps them out
+      # of the "known after apply" list on every unrelated update.
+      #
+      # Deliberately not listed: has_org_admin_access, has_data_share,
+      # has_manage_warehouses_grant and mode_credentials_configured, which an
+      # update can genuinely change, and etag and the timestamps, which change by
+      # design.
+      connection_id:
+        use_state_for_unknown: true
+      snowflake_organization_name:
+        use_state_for_unknown: true
+      snowflake_account_name:
+        use_state_for_unknown: true
+      snowflake_reader_parent_account_name:
+        use_state_for_unknown: true
+      locator:
+        use_state_for_unknown: true
+      account_region:
+        use_state_for_unknown: true
+      snowsight_url:
+        use_state_for_unknown: true
+      added_by_email:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
+      # SELECT stores each of these exactly as given and returns it unchanged, so
+      # the configuration is the only source for them.
+      #
+      # The generator makes them optional+computed because they appear in both the
+      # request and the response, but optional+computed means a null in the
+      # configuration keeps whatever the state already holds — so removing one of
+      # these from a configuration would silently do nothing instead of clearing
+      # the field. Plain optional is what makes a removal reach the API as the
+      # null that clears it.
+      #
+      # This is safe only because the API does not derive these values. Anything
+      # it computes must stay computed. excluded_users_filter_expression is the
+      # one field it reshapes — it round-trips through json.loads — which the
+      # resource absorbs by keeping the configured spelling when the two are the
+      # same document.
+      role:
+        computed_optional_required: optional
+      warehouse:
+        computed_optional_required: optional
+      describe_object_sproc_name:
+        computed_optional_required: optional
+      export_storage_integration_name:
+        computed_optional_required: optional
+      export_stage_name:
+        computed_optional_required: optional
+      compute_cost_per_credit:
+        computed_optional_required: optional
+      storage_cost_per_tb:
+        computed_optional_required: optional
+      customer_side_sanitization_database_schema:
+        computed_optional_required: optional
+      customer_side_sanitization_views:
+        computed_optional_required: optional
+      excluded_users_filter_expression:
+        computed_optional_required: optional
+      fivetran_users:
+        computed_optional_required: optional
+      mode_workspace:
+        computed_optional_required: optional
+      mode_token_id:
+        computed_optional_required: optional
+
+      # The API never returns a secret, so these can only ever hold what the
+      # configuration says. Leaving them computed would promise a value that no
+      # read can supply.
+      credentials.username:
+        computed_optional_required: optional
+      credentials.password:
+        computed_optional_required: optional
+      credentials.private_key:
+        computed_optional_required: optional
+      credentials.private_key_passphrase:
+        computed_optional_required: optional
+      mode_token_secret:
+        computed_optional_required: optional

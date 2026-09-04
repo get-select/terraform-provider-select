@@ -1,9 +1,13 @@
 # Generated files
 openapi.public.json
+openapi.v2.json
 providers-schema.json
 
 # Some processes build the provider and leave the binary in this dir
 terraform-provider-select
+# `go build ./tools/specpatch` leaves its binary here. Anchored, so it does not
+# also exclude the tools/specpatch source directory.
+/specpatch
 
 # Terraform files
 terraform.tfstate

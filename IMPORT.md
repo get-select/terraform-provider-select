@@ -10,6 +10,7 @@ The Select Terraform provider supports importing existing resources that were cr
 
 - `select_usage_group_set` - Usage Group Sets
 - `select_usage_group` - Usage Groups
+- `select_snowflake_account` - Snowflake Accounts
 
 ## Prerequisites
 
@@ -75,6 +76,14 @@ In this example, the Usage Group Set ID is: `35b3af95-466f-4669-a3d0-916acb54771
 In this example, the Usage Group ID is: `38fccd46-6b3e-4a02-ab08-5fff826f4147`
 
 **💡 Pro Tip**: The JSON mode is also useful for copying filter expressions to your Terraform configuration!
+
+### Snowflake Account ID
+
+The ID is the Snowflake account's own identifier, so there is nothing to look up in the SELECT UI. It is the `ORGANIZATION-ACCOUNT` value you would use to connect to the account, normalized: lower case, no surrounding whitespace, and a `-` rather than a `.` between the organization and account names.
+
+Running `select current_organization_name(), current_account_name();` in Snowflake gives you both halves. For `ACME` and `US_EAST_1`, the ID is `acme-us_east_1`.
+
+A PrivateLink identifier keeps its dots, because the host it resolves to does: `acme-us-east-1.privatelink`.
 
 ## Converting Filter Expressions from JSON to Terraform
 
@@ -151,6 +160,20 @@ terraform import select_usage_group.analytics_team 35b3af95-466f-4669-a3d0-916ac
 ```
 
 **Note**: Usage Groups require a compound ID format with both the parent Usage Group Set ID and the Usage Group ID separated by a forward slash (`/`).
+
+### Importing a Snowflake Account
+
+**Command Format:**
+```bash
+terraform import select_snowflake_account.<resource_name> <snowflake_account_id>
+```
+
+**Example:**
+```bash
+terraform import select_snowflake_account.production acme-us-east-1
+```
+
+**Note**: An import cannot recover `credentials`. SELECT keeps them in a secret store and never returns them, so put the credentials in your configuration before importing. The first `terraform plan` after the import will show `credentials` as a change, and applying it re-sends them. That plan may also show a whitespace-only change to `excluded_users_filter_expression`, because SELECT stores it as a JSON document and re-serializes it on the way out; applying once settles it.
 
 ## Step-by-Step Import Process
 

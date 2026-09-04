@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# Generator config for the SELECT API v2 surface (https://api.select.dev/v2).
+#
+# v2 is a separate FastAPI app with its own OpenAPI document, so it needs its own
+# generator config and its own generated code spec — see generator_config.yml for
+# the v1 public API.
+#
+# tfplugingen-openapi's `overrides` only supports `description` (its Override
+# struct has a single field). Everything the schema needs beyond that — sensitive
+# attributes, server-side defaults, plan modifiers — is applied afterwards by
+# ./tools/specpatch from generator_overrides.v2.yml.
+
+provider:
+  name: select
+
+resources:
+  snowflake_account:
+    create:
+      path: /snowflake-accounts
+      method: POST
+    read:
+      path: /snowflake-accounts/{snowflake_account_id}
+      method: GET
+    update:
+      path: /snowflake-accounts/{snowflake_account_id}
+      method: PATCH
+    delete:
+      path: /snowflake-accounts/{snowflake_account_id}
+      method: DELETE
+    schema:
+      attributes:
+        aliases:
+          snowflake_account_id: id
+        overrides:
+          id:
+            description: >-
+              The account's Snowflake identifier, in ORGANIZATION-ACCOUNT form (e.g.
+              acme-us-east-1). Must already be normalized: lower case, no surrounding
+              whitespace, and `-` rather than `.` between organization and account. A
+              PrivateLink identifier, which ends in `.privatelink`, keeps its dots.
+              Changing this forces a new Snowflake account to be added.
+          credentials:
+            description: >-
+              How SELECT authenticates to the account. The secrets in this block are
+              stored in a secret store and never returned by the API, so SELECT cannot
+              detect changes made to them outside Terraform.
+          etag:
+            description: >-
+              Opaque strong ETag for this account. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.
