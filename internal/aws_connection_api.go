@@ -25,6 +25,7 @@ func awsConnectionEndpoint(id string) string {
 var awsConnectionErrors = v2ErrorFormat{
 	Noun:       "AWS Connection",
 	Subject:    "the connection",
+	Object:     "the AWS connection",
 	Plural:     "AWS connections",
 	ReadScope:  "aws_accounts:read",
 	WriteScope: "aws_accounts:write",
@@ -134,27 +135,17 @@ func buildAwsConnectionCreate(plan *resource_aws_connection.AwsConnectionModel) 
 // from what state records. See awsConnectionUpdatePayload.
 func buildAwsConnectionUpdate(plan, state *resource_aws_connection.AwsConnectionModel) *awsConnectionUpdatePayload {
 	payload := &awsConnectionUpdatePayload{
-		S3Prefix: clearedString(plan.S3Prefix, state.S3Prefix),
+		Name:           changedString(plan.Name, state.Name),
+		PayerAccountId: changedString(plan.PayerAccountId, state.PayerAccountId),
+		S3Bucket:       changedString(plan.S3Bucket, state.S3Bucket),
+		S3Prefix:       clearedString(plan.S3Prefix, state.S3Prefix),
+		Region:         changedString(plan.Region, state.Region),
+		SyncEnabled:    changedBool(plan.SyncEnabled, state.SyncEnabled),
 	}
 
-	if !plan.Name.Equal(state.Name) {
-		payload.Name = stringPointer(plan.Name)
-	}
-	if !plan.PayerAccountId.Equal(state.PayerAccountId) {
-		payload.PayerAccountId = stringPointer(plan.PayerAccountId)
-	}
-	if !plan.S3Bucket.Equal(state.S3Bucket) {
-		payload.S3Bucket = stringPointer(plan.S3Bucket)
-	}
-	if !plan.Region.Equal(state.Region) {
-		payload.Region = stringPointer(plan.Region)
-	}
 	if !plan.Credentials.Equal(state.Credentials) {
 		credentials := buildAwsCredentials(plan.Credentials)
 		payload.Credentials = &credentials
-	}
-	if !plan.SyncEnabled.Equal(state.SyncEnabled) {
-		payload.SyncEnabled = boolPointer(plan.SyncEnabled)
 	}
 
 	return payload
@@ -200,15 +191,17 @@ func applyAwsConnectionResponse(
 // against S3, an explanation of the ETag contract for a precondition failure, and
 // the problem document's detail otherwise.
 func awsConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
-	if diagnostic := v2ValidationDiagnostic("AWS Connection Validation Failed", operation, apiErr); diagnostic != nil {
-		return diagnostic
-	}
+	return awsConnectionErrors.diagnostic(operation, apiErr, awsConnectionSpecificDiagnostic)
+}
 
+// awsConnectionSpecificDiagnostic is this resource's own opinion about an API
+// failure: the several situations a 409 conflict covers, and the credential
+// store's own outage status. Everything else this resource can hit — the
+// validation report, precondition failures, and missing scopes — is worded the
+// same for every v2 resource, so it is handled by v2ErrorFormat.diagnostic
+// instead of here.
+func awsConnectionSpecificDiagnostic(operation string, apiErr *apiError) diag.Diagnostic {
 	switch apiErr.StatusCode {
-	case http.StatusPreconditionFailed:
-		return awsConnectionErrors.preconditionFailed(operation, apiErr)
-	case http.StatusPreconditionRequired:
-		return awsConnectionErrors.preconditionRequired(operation, apiErr)
 	case http.StatusConflict:
 		// SELECT rejects a second connection covering ground it already reads —
 		// the same payer account or the same report location — and, separately,
@@ -241,8 +234,6 @@ func awsConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnos
 					operation, apiErr.Detail),
 			)
 		}
-	case http.StatusForbidden:
-		return awsConnectionErrors.forbidden(operation, apiErr)
 	case http.StatusServiceUnavailable:
 		// SELECT keeps the secret access key in a secret store it reaches on every
 		// write, so this says nothing about the configuration and retrying works.
@@ -253,6 +244,6 @@ func awsConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnos
 				"again.\n\n%s", operation, apiErr.Detail),
 		)
 	default:
-		return awsConnectionErrors.unexpected(operation, apiErr)
+		return nil
 	}
 }

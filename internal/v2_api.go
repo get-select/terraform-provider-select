@@ -5,6 +5,7 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -93,6 +94,9 @@ type v2ErrorFormat struct {
 	Noun string
 	// Subject is how the message body refers to it: "the account".
 	Subject string
+	// Object is how an operation string names it: "the AWS connection", used to
+	// build phrases like "add the AWS connection".
+	Object string
 	// Plural describes what an API key is being asked to manage: "Snowflake
 	// accounts".
 	Plural string
@@ -139,4 +143,37 @@ func (f v2ErrorFormat) unexpected(operation string, apiErr *apiError) diag.Diagn
 		f.Noun+" API Error",
 		fmt.Sprintf("SELECT could not %s: %s", operation, apiErr.Error()),
 	)
+}
+
+// v2Diagnostic renders one resource's opinion about an API failure — its own
+// conflict (409) handling, and whatever else about its API is not one of the
+// statuses every v2 resource treats the same way. A nil return means the
+// resource has nothing specific to say about this status, so diagnostic should
+// fall through to its own shared wording.
+type v2Diagnostic func(operation string, apiErr *apiError) diag.Diagnostic
+
+// diagnostic renders an API failure the way every v2 resource does: the
+// validation report when the API ran one, then whatever the resource itself
+// says about this status, then the wording the v2 contract owns for
+// 412/428/403, then a generic fallback quoting the problem document. specific
+// may be nil.
+func (f v2ErrorFormat) diagnostic(operation string, apiErr *apiError, specific v2Diagnostic) diag.Diagnostic {
+	if d := v2ValidationDiagnostic(f.Noun+" Validation Failed", operation, apiErr); d != nil {
+		return d
+	}
+	if specific != nil {
+		if d := specific(operation, apiErr); d != nil {
+			return d
+		}
+	}
+	switch apiErr.StatusCode {
+	case http.StatusPreconditionFailed:
+		return f.preconditionFailed(operation, apiErr)
+	case http.StatusPreconditionRequired:
+		return f.preconditionRequired(operation, apiErr)
+	case http.StatusForbidden:
+		return f.forbidden(operation, apiErr)
+	default:
+		return f.unexpected(operation, apiErr)
+	}
 }
