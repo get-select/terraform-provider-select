@@ -102,8 +102,8 @@ func numberPointer(value types.Number) *float64 {
 	return &result
 }
 
-// int64Pointer returns nil for a null or unknown value, so the field is
-// serialized as JSON null rather than 0.
+// int64Pointer returns nil for a null or unknown value, so an omitempty field
+// is left out of the request rather than sent as 0.
 func int64Pointer(value types.Int64) *int64 {
 	if value.IsNull() || value.IsUnknown() {
 		return nil

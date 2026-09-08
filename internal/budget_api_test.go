@@ -369,12 +369,47 @@ func TestBudgetApplyResponsePreservesStartedAtSpelling(t *testing.T) {
 	}
 }
 
+// The API serializes started_at from a stored timestamp, so it carries
+// fractional seconds whenever the underlying value has them. The same instant
+// spelled with and without them should not read as drift.
+func TestBudgetApplyResponsePreservesStartedAtAcrossFractionalSeconds(t *testing.T) {
+	source := fixedRangeBudget(t)
+	source.StartedAt = types.StringValue("2026-01-01T00:00:00Z")
+	model := fixedRangeBudget(t)
+	model.StartedAt = types.StringValue("2026-01-01T00:00:00Z")
+
+	response := &budgetResponse{
+		Id:                 "2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01",
+		Etag:               `"def456"`,
+		Name:               "Q1 Marketing",
+		Amount:             1000,
+		StartedAt:          "2026-01-01T00:00:00.000000Z",
+		CurrentPeriodStart: "2026-01-01",
+		CurrentPeriodEnd:   "2026-03-31",
+		CreatedBy:          "someone@acme.com",
+		CreateTime:         "2026-01-01T00:00:00Z",
+		UpdateTime:         "2026-01-01T00:00:00Z",
+		Period: budgetSchedule{
+			ScheduleType: "fixed_range",
+			StartDate:    "2026-01-01",
+			EndDate:      strPtr("2026-03-31"),
+		},
+	}
+
+	if diags := applyBudgetResponse(context.Background(), &model, &source, response); diags.HasError() {
+		t.Fatalf("applying the response: %v", diags)
+	}
+	if model.StartedAt.ValueString() != "2026-01-01T00:00:00Z" {
+		t.Errorf("the configured spelling should be kept, got %v", model.StartedAt)
+	}
+}
+
 // The API re-encodes filter_expression_json from the structured filter it
 // stores, reordering leaf keys along the way (written field, operator, value;
 // returned field, value, operator). That reordering should not read as drift.
 func TestBudgetApplyResponsePreservesFilterKeyOrder(t *testing.T) {
-	configured := `{"operator":"and","filters":[{"field":"warehouse_name","operator":"in","value":["SELECT_BACKEND"]}]}`
-	returned := `{"operator":"and","filters":[{"field":"warehouse_name","value":["SELECT_BACKEND"],"operator":"in"}]}`
+	configured := `{"operator":"and","filters":[{"field":"warehouse_name","operator":"in","values":["SELECT_BACKEND"]}]}`
+	returned := `{"operator":"and","filters":[{"field":"warehouse_name","values":["SELECT_BACKEND"],"operator":"in"}]}`
 
 	source := fixedRangeBudget(t)
 	source.FilterExpressionJson = types.StringValue(configured)
