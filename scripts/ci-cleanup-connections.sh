@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 #
-# Delete connections a test run left attached to the organization.
+# Delete connections and budgets a test run left attached to the organization.
 #
 # `terraform test` destroys what it created, but a run cancelled mid-apply — or
-# one whose destroy the API refused — leaves a connection behind. The next run
+# one whose destroy the API refused — leaves a resource behind. The next run
 # then fails before it starts: SELECT rejects a second connection with a name
 # already in use, and the same Snowflake account identifier cannot be added to an
 # organization twice. So CI sweeps before and after, and the sweep has to be
 # idempotent and safe to run against an organization holding nothing.
 #
-# Only connections whose name begins with CI_RESOURCE_PREFIX are touched. That
+# Only resources whose name begins with CI_RESOURCE_PREFIX are touched. That
 # prefix carries the workflow run id, so a sweep cleaning up after one run cannot
 # reach into another's resources — with one exception, the pre-run sweep, which
 # is deliberately given the bare prefix to reach older leaks.
 #
 # Environment:
-#   SELECT_API_KEY          key with <resource>:read and :write for all four
-#   SELECT_ORGANIZATION_ID  organization the connections belong to
+#   SELECT_API_KEY          key with <resource>:read and :write for all five
+#   SELECT_ORGANIZATION_ID  organization the resources belong to
 #   SELECT_API_URL          defaults to https://api.select.dev
 #   CI_RESOURCE_PREFIX      defaults to terraform-test
 
@@ -33,6 +33,7 @@ COLLECTIONS=(
   databricks-connections
   bigquery-connections
   aws-accounts
+  budgets
 )
 
 deleted=0

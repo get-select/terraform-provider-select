@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-snowflake test-databricks test-bigquery test-aws test-connections test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+.PHONY: codegen build install clean reset test test-go test-all test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 # The provider is generated from two OpenAPI documents: the v1 public API
 # (openapi.public.json) and the v2 API (openapi.v2.json), which is a separate
 # FastAPI app with its own document. Each needs its own generator config and its
@@ -160,6 +160,18 @@ test-aws:
 # this needs every credential the individual targets do.
 test-connections: test-snowflake test-databricks test-bigquery test-aws
 
+# Budget tests. Unlike the four connection suites, creating a budget makes no
+# call to an external system — SELECT stores the definition directly — so this
+# needs nothing beyond the same API key and organization every other test
+# already uses.
+#
+# Required environment:
+#   TF_VAR_select_api_key      an API key with budgets:read and :write
+#   TF_VAR_select_organization_id
+test-budget:
+	@echo "Running budget tests..."
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=budget.tftest.hcl
+
 # Remove connections a failed run left attached to the organization. `terraform
 # test` tears down what it can, but a run killed mid-apply — or one whose destroy
 # the API refused — leaves a connection behind, and the next run then fails on the
@@ -232,6 +244,7 @@ help:
 	@echo "  test-bigquery    - Run BigQuery connection tests (needs a real GCP project and service account)"
 	@echo "  test-aws         - Run AWS connection tests (needs a real AWS payer account and CUR bucket)"
 	@echo "  test-connections - Run all four connection test suites"
+	@echo "  test-budget      - Run budget tests (needs only an API key; no external system involved)"
 	@echo "  test-sweep       - Delete connections a failed run left behind"
 	@echo "  test-clean       - Clean up test resources and state files"
 	@echo ""

@@ -1,0 +1,56 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+A budget compares actual spend against `amount` for its current period, optionally narrowed to a team and to a slice of spend via `filter_expression_json`. To learn more, see the [SELECT documentation](https://select.dev/docs/getting-started).
+
+This resource is backed by SELECT's v2 API, at `/v2/budgets`. The `api_key` configured on the provider must carry the `budgets:read` and `budgets:write` scopes; without them every operation fails with an authorization error.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the budget's ID in SELECT:
+
+```bash
+terraform import {{ .Name }}.example 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+The ID is assigned by SELECT when the budget is created, so there is nothing about your configuration that predicts it. It is the `id` attribute, and it is also the last path segment of the budget's page in the SELECT UI.
+
+## Additional Information
+
+### `period` is one object, not a block per schedule type
+
+`period` is keyed by its own `schedule_type` rather than split into `fixed_range`, `weekly`, `monthly`, `quarterly`, `yearly` and `custom` blocks: `fixed_range` requires `end_date`; the four recurring types accept `expires_on` and `expires_after_occurrences`; `custom` requires `repeat_every` and `repeat_unit` and accepts the same two expiry fields. A field that does not belong to the chosen `schedule_type` fails at plan time.
+
+Changing `period` clears the budget's evaluated `status`, letting a monitor watching it alert again on thresholds it has already reported.
+
+### `filter_expression_json` must be a group at its root
+
+The value is a JSON-encoded filter, and its root must be a group — `{"operator": "and"|"or", "filters": [...]}` — never a single leaf filter. Terraform cannot see inside the string, so a leaf at the root plans clean and only fails when SELECT rejects it on apply.
+
+Removing `filter_expression_json` from the configuration clears it, which counts all spend toward the budget rather than narrowing it.
+
+### `team_id` clears with the same explicit-removal rule
+
+Removing `team_id` from the configuration moves the budget to organization scope. Moving a budget between scopes requires permission to write budgets in the scope it leaves and the one it joins.
+
+### Changes made outside Terraform
+
+Every write carries the budget's `etag` as an `If-Match` header, so an update or delete is refused if the budget changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.
+
+### `current_period_start`, `current_period_end` and `budget_end_date` move with the calendar
+
+These are derived from `period` every time the budget is read, so they can change between two applies that changed nothing about the budget itself — a recurring budget's current period simply moves on.
+
+### Deleting a budget also deletes every monitor watching it
+
+Destroying this resource removes the budget and every monitor configured against it. Spend already recorded elsewhere is unaffected.
