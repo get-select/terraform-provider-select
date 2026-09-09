@@ -5,8 +5,10 @@ package provider
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -100,6 +102,24 @@ func numberPointer(value types.Number) *float64 {
 	return &result
 }
 
+// int64Pointer returns nil for a null or unknown value, so an omitempty field
+// is left out of the request rather than sent as 0.
+func int64Pointer(value types.Int64) *int64 {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	result := value.ValueInt64()
+	return &result
+}
+
+// changedNumber is changedString's counterpart for types.Number.
+func changedNumber(plan, state types.Number) *float64 {
+	if plan.Equal(state) {
+		return nil
+	}
+	return numberPointer(plan)
+}
+
 func stringListPointer(ctx context.Context, value types.List) (*[]string, diag.Diagnostics) {
 	if value.IsNull() || value.IsUnknown() {
 		return nil, nil
@@ -131,6 +151,13 @@ func boolValue(value *bool) types.Bool {
 		return types.BoolNull()
 	}
 	return types.BoolValue(*value)
+}
+
+func int64Value(value *int64) types.Int64 {
+	if value == nil {
+		return types.Int64Null()
+	}
+	return types.Int64Value(*value)
 }
 
 func stringListValue(ctx context.Context, value *[]string) (types.List, diag.Diagnostics) {
@@ -204,4 +231,31 @@ func preserveEquivalentFold(configured types.String, returned *string) types.Str
 		return configured
 	}
 	return types.StringValue(*returned)
+}
+
+// preserveEquivalentTime keeps the configured spelling of a timestamp when the
+// API echoes back an equivalent instant in a different format — a budget's
+// started_at configured as the bare date "2026-01-01" comes back as
+// "2026-01-01T00:00:00Z".
+func preserveEquivalentTime(configured types.String, returned *string) types.String {
+	if returned == nil || configured.IsNull() || configured.IsUnknown() {
+		return stringValue(returned)
+	}
+	configuredTime, configuredErr := parseTimestamp(configured.ValueString())
+	returnedTime, returnedErr := parseTimestamp(*returned)
+	if configuredErr == nil && returnedErr == nil && configuredTime.Equal(returnedTime) {
+		return configured
+	}
+	return types.StringValue(*returned)
+}
+
+// parseTimestamp accepts every spelling a timestamp field can arrive in: RFC
+// 3339 with a zone, the zone-less form some clients send, and a bare date.
+func parseTimestamp(value string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05", time.DateOnly} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized timestamp %q", value)
 }

@@ -14,6 +14,7 @@ The Select Terraform provider supports importing existing resources that were cr
 - `select_databricks_connection` - Databricks Connections
 - `select_bigquery_connection` - BigQuery Connections
 - `select_aws_connection` - AWS Connections
+- `select_budget` - Budgets
 
 ## Prerequisites
 
@@ -122,6 +123,18 @@ Open the connection in the SELECT UI and take the last segment of the URL, or li
 curl -s https://api.select.dev/v2/aws-accounts \
   -H "Authorization: Bearer $SELECT_API_KEY" \
   -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, payer_account_id}'
+```
+
+### Budget ID
+
+A budget's ID is assigned by SELECT when it is created, so there is nothing about your configuration that predicts it.
+
+Open the budget in the SELECT UI and take the last segment of the URL, or list them with the API:
+
+```bash
+curl -s https://api.select.dev/v2/budgets \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, amount}'
 ```
 
 ## Converting Filter Expressions from JSON to Terraform
@@ -255,6 +268,20 @@ terraform import select_aws_connection.production 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b
 ```
 
 **Note**: An import cannot recover `credentials`. SELECT returns neither the access key id nor the secret on this resource, so put both in your configuration before importing. The first `terraform plan` after the import will show `credentials` as a change; applying it re-sends them, which makes SELECT revalidate the connection against S3.
+
+### Importing a Budget
+
+**Command Format:**
+```bash
+terraform import select_budget.<resource_name> <budget_id>
+```
+
+**Example:**
+```bash
+terraform import select_budget.production 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+**Note**: Unlike the connection resources, a budget holds no secret, so nothing about the import is incomplete. `period` must still match what SELECT has on record — including `schedule_type` — or the first `terraform plan` after the import will show it as a change.
 
 ## Step-by-Step Import Process
 

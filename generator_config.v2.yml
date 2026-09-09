@@ -166,3 +166,50 @@ resources:
             description: >-
               Opaque strong ETag for this connection. Sent as `If-Match` on updates and
               deletes so a change made outside Terraform cannot be silently overwritten.
+
+  budget:
+    create:
+      path: /budgets
+      method: POST
+    read:
+      path: /budgets/{budget_id}
+      method: GET
+    update:
+      path: /budgets/{budget_id}
+      method: PATCH
+    delete:
+      path: /budgets/{budget_id}
+      method: DELETE
+    schema:
+      # period is a oneOf discriminated on schedule_type. Left un-ignored,
+      # tfplugingen-openapi answers "schema composition is currently not
+      # supported" and drops the entire budget resource from the code spec, so
+      # the attribute is hand-written in budget_resource.go instead.
+      #
+      # filter_expression is a recursive 8-way anyOf, beyond generating at all.
+      # The API also 422s ("Use exactly one of filter_expression or
+      # filter_expression_json") if both keys are present in a request, and
+      # Pydantic counts an explicit null as present — so this resource must never
+      # emit the key, and filter_expression_json is its whole filter surface.
+      ignores:
+        - period
+        - filter_expression
+      attributes:
+        aliases:
+          budget_id: id
+        overrides:
+          id:
+            description: >-
+              The budget's identifier in SELECT, assigned when it is created. Use it
+              with `terraform import` to bring an existing budget under management.
+          name:
+            description: The budget's display name.
+          etag:
+            description: >-
+              Opaque strong ETag for this budget. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.
+          filter_expression_json:
+            description: >-
+              A JSON-encoded filter narrowing which spend counts toward the budget.
+              Null counts all spend. The root of the filter must be a group —
+              `{"operator": "and"|"or", "filters": [...]}` — not a single leaf filter.

@@ -3,12 +3,14 @@
 Integration tests for the SELECT Terraform provider using Terraform's built-in
 testing framework.
 
-There are two kinds. `provider.tftest.hcl` covers usage groups and needs only a
-SELECT API key. The four `*_connection.tftest.hcl` / `snowflake_account.tftest.hcl`
+There are three kinds. `provider.tftest.hcl` covers usage groups and needs only
+a SELECT API key. The four `*_connection.tftest.hcl` / `snowflake_account.tftest.hcl`
 suites manage **real connections**: creating one makes SELECT validate the
 configuration against Snowflake, Databricks, BigQuery or S3 for real, so they
 need working credentials for the system being connected and are kept out of
-`make test`.
+`make test`. `budget.tftest.hcl` manages a real budget, but creating one makes
+no call to an external system — SELECT stores the definition directly — so it
+needs nothing beyond the same API key every suite already uses.
 
 ## Setup
 
@@ -35,8 +37,9 @@ make test-databricks
 make test-bigquery
 make test-aws
 make test-connections  # all four
+make test-budget       # no credentials of its own; joins CI's e2e matrix
 make test-clean        # remove local state files
-make test-sweep        # delete connections a failed run left behind
+make test-sweep        # delete connections and budgets a failed run left behind
 ```
 
 Individual cases:
@@ -48,7 +51,9 @@ terraform test provider.tftest.hcl -filter=create_usage_group_set
 
 ## What the connection suites cover
 
-Each one walks a full create → update → delete cycle against the live API:
+Each one walks a full create → update → delete cycle against the live API.
+`budget.tftest.hcl` follows the same shape, minus anything that depends on an
+external system:
 
 - **create** — the resource lands in state with what SELECT resolved from the
   system being connected, including the ETag every later write depends on, and
@@ -83,6 +88,7 @@ variables for the one you want to run.
 | Databricks | `databricks_connection_name`, `databricks_account_id`, `databricks_workspace_url`, `databricks_warehouse_id`, `databricks_client_id`, `databricks_client_secret` |
 | BigQuery | `bigquery_connection_name`, `bigquery_gcp_project_id`, `bigquery_dataset_id`, `bigquery_billing_account_id`, `bigquery_service_account` |
 | AWS | `aws_connection_name`, `aws_payer_account_id`, `aws_s3_bucket`, `aws_s3_prefix`, `aws_region`, `aws_access_key_id`, `aws_secret_access_key` |
+| Budget | `budget_name` — nothing else; creating a budget makes no call to an external system |
 
 One of these is not obvious: **`bigquery_service_account`** is not a credential
 this test holds. Access comes from the SELECT backend impersonating that service
@@ -90,15 +96,15 @@ account, so the grant lives in the target GCP project's IAM, not here.
 
 ## In CI
 
-`.github/workflows/e2e.yaml` runs three of the four suites as a matrix against
-the deployed API using a dedicated test organization — Databricks, BigQuery and
-AWS. Credentials come from GitHub secrets mapped to the `TF_VAR_` names above —
-the same mechanism the select repo's `test-e2e.yaml` uses, though every secret
-here is its own copy rather than shared with it. select's equivalents are named
-`E2E_CREATE_*` because it also runs e2e tests against *pre-existing* Snowflake
-connections (so `CREATE_` distinguishes the ones its create-flow test
-provisions); this repo never has that second kind, so its names drop the
-`CREATE_`.
+`.github/workflows/e2e.yaml` runs the connection suites and budget as a matrix
+against the deployed API using a dedicated test organization — Databricks,
+BigQuery, AWS and Budget. Credentials come from GitHub secrets mapped to the
+`TF_VAR_` names above — the same mechanism the select repo's `test-e2e.yaml`
+uses, though every secret here is its own copy rather than shared with it.
+select's equivalents are named `E2E_CREATE_*` because it also runs e2e tests
+against *pre-existing* Snowflake connections (so `CREATE_` distinguishes the
+ones its create-flow test provisions); this repo never has that second kind, so
+its names drop the `CREATE_`.
 
 **Snowflake is excluded from the matrix for now.** SELECT enforces one global
 claim per Snowflake organization across every SELECT org, not per-account, and
@@ -110,20 +116,21 @@ is a one-line change at that point.
 
 Two things keep runs from tripping over each other:
 
-- Every connection is named `terraform-test-<run id>-<platform>`, and the
+- Every resource is named `terraform-test-<run id>-<platform>`, and the
   workflow takes a `concurrency` lock. SELECT refuses a second connection with a
   name already in use, and the same Snowflake account identifier cannot be added
   to an organization twice, so runs have to queue rather than overlap.
-- `scripts/ci-cleanup-connections.sh` sweeps before and after. A run cancelled
-  mid-apply leaves a connection attached, and its name is then taken for good.
-  `make test-sweep` runs the same script locally.
+- `scripts/ci-cleanup-connections.sh` sweeps before and after, budgets included.
+  A run cancelled mid-apply leaves a resource attached, and its name is then
+  taken for good. `make test-sweep` runs the same script locally.
 
 ## Troubleshooting
 
 ### `Error: Unauthorized`
-Verify your environment variables. The connection suites need an API key with the
-read and write scopes for the resource in question — `snowflake_accounts:*`,
-`databricks_connections:*`, `bigquery_connections:*`, `aws_accounts:*`.
+Verify your environment variables. Each suite needs an API key with the read
+and write scopes for the resource in question — `snowflake_accounts:*`,
+`databricks_connections:*`, `bigquery_connections:*`, `aws_accounts:*`,
+`budgets:*`.
 
 ### `Error: Could not find required provider`
 Run `make install && make setup-dev-overrides`.

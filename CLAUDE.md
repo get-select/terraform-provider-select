@@ -27,7 +27,8 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `make test-bigquery` - BigQuery connection tests; needs a working GCP project and service account, so it is excluded from `make test`
 - `make test-aws` - AWS connection tests; needs an AWS payer account with a working CUR delivery, so it is excluded from `make test`
 - `make test-connections` - All four connection suites
-- `make test-sweep` - Delete connections a failed run left attached to the organization
+- `make test-budget` - Budget tests; creates no real connection, so it needs only the same API key every suite already uses
+- `make test-sweep` - Delete connections and budgets a failed run left attached to the organization
 - `make test-clean` - Clean up test state files
 
 **Test Requirements**: Tests require environment variables:
@@ -73,6 +74,7 @@ internal/
 ├── provider/               # Generated code (git-ignored, regenerated each build)
 │   ├── resource_aws_connection/
 │   ├── resource_bigquery_connection/
+│   ├── resource_budget/
 │   ├── resource_databricks_connection/
 │   ├── resource_snowflake_account/
 │   ├── resource_usage_group/
@@ -82,6 +84,8 @@ internal/
 ├── usage_group_resource.go        # Custom resource implementation (connects generated types to API)
 ├── usage_group_set_resource.go    # Custom resource implementation
 ├── v2_api.go                      # Conventions every v2 resource shares: If-Match, problem+json, validation reports
+├── v2_resource.go                  # Generic v2 CRUD (Create/Read/Update/Delete) shared by every v2 resource
+├── v2_convert.go                   # Field-conversion and drift-avoidance helpers the v2 resources' payload builders share
 ├── snowflake_account_resource.go  # Snowflake account resource (v2 API): CRUD and config validation
 ├── snowflake_account_api.go       # Its request payloads, response mapping, and error formatting
 ├── databricks_connection_resource.go # Databricks connection resource (v2 API)
@@ -89,7 +93,9 @@ internal/
 ├── bigquery_connection_resource.go   # BigQuery connection resource (v2 API)
 ├── bigquery_connection_api.go        # Its request payloads, response mapping, and error formatting
 ├── aws_connection_resource.go        # AWS connection resource (v2 API)
-└── aws_connection_api.go             # Its request payloads, response mapping, and error formatting
+├── aws_connection_api.go             # Its request payloads, response mapping, and error formatting
+├── budget_resource.go                # Budget resource (v2 API): hand-written period attribute, CRUD and config validation
+└── budget_api.go                     # Its request payloads, response mapping, and error formatting
 ```
 
 ### How Resources Work
@@ -189,7 +195,8 @@ The v2 surface differs from v1 in ways the client has to honour:
 - **Tenancy is a header.** Requests are scoped by `x-tenant-id` rather than an organization ID in the path. `makeRequest` sets it on every request; v1 ignores it.
 - **Writes require `If-Match`.** A configurable resource's `etag` must be echoed on update and delete: without it the API answers `428`, and with a stale value `412`. This is why `etag` is a computed attribute persisted in state.
 - **Errors are `application/problem+json`** (RFC 9457) carrying `detail` and a stable `code`. `newAPIError` reads them so diagnostics quote the API's own explanation rather than a raw body.
-- **Updates are JSON Merge Patch.** An omitted field is left unchanged and `null` clears it. What that implies for a payload depends on the resource: `snowflakeAccountUpdatePayload` sends every clearable field on every update, because removing one from a configuration has to reach the API as the `null` that clears it. `databricksConnectionUpdatePayload` sends only what changed, because nothing on that resource can be cleared and SELECT re-validates against Databricks whenever the access-related fields are merely *present*. Read the API's update schema before deciding which shape a new resource needs.
+- **Updates are JSON Merge Patch.** An omitted field is left unchanged and `null` clears it. What that implies for a payload depends on the resource: `snowflakeAccountUpdatePayload` sends every clearable field on every update, because removing one from a configuration has to reach the API as the `null` that clears it. `databricksConnectionUpdatePayload` sends only what changed, because nothing on that resource can be cleared and SELECT re-validates against Databricks whenever the access-related fields are merely *present*. `budgetUpdatePayload` also sends only what changed — its API 422s on an explicit null for `name`, `amount`, `period` and `started_at` — but unlike Databricks it does have two clearable fields, `team_id` and `filter_expression_json`, so those two use `*nullableString` for the three-state omit/null/value a plain pointer cannot express. Read the API's update schema before deciding which shape a new resource needs.
+- **Not every property survives codegen.** A `oneOf` discriminated union (budget's `period`) makes `tfplugingen-openapi` drop the whole resource with "schema composition is currently not supported," and a recursive `anyOf` (budget's `filter_expression`) is both ungeneratable and, on this API, dangerous to emit at all — sending both `filter_expression` and `filter_expression_json` 422s, and an explicit null counts as present. Both go in the resource's `ignores` list in `generator_config.v2.yml`; `period` is then hand-written as a `types.Object` attribute injected into the generated schema, and `filter_expression_json`, a plain JSON-encoded string, is the resource's whole filter surface.
 - **`doRequest` returns the status.** `doJSONRequest` flattens everything into diagnostics (and reports a 404 as a warning) for the v1 resources; callers that need to act on a status, such as removing a deleted resource from state, use `doRequest` directly.
 
 ## Testing Notes
@@ -204,4 +211,4 @@ Tests run against the live SELECT API and create real resources. Always run `mak
 
 The connection suites go further: each one drives a full create → update → delete cycle, with the delete written as a run block that flips the suite's `enable_*` variable to `false`. Terraform's own teardown would destroy the resource anyway, but it asserts nothing and swallows what it cannot remove, so a delete the API refuses has to fail the test rather than pass quietly. When one of these fails partway it leaves a connection attached to the organization, and the name is then in use for good — `make test-sweep` clears it.
 
-CI runs three of the four suites — Databricks, BigQuery and AWS — from `.github/workflows/e2e.yaml` against the deployed API with a dedicated test organization, taking credentials from GitHub secrets. Because one organization backs every run, the workflow serializes on a `concurrency` group and names each connection after the run id. Snowflake is excluded from CI for now: SELECT claims a Snowflake organization globally, not per SELECT org, and every test account currently available is already claimed elsewhere. `make test-snowflake` still works locally against a dedicated, unclaimed fixture.
+CI runs Databricks, BigQuery, AWS and Budget from `.github/workflows/e2e.yaml` against the deployed API with a dedicated test organization, taking credentials from GitHub secrets. Because one organization backs every run, the workflow serializes on a `concurrency` group and names each resource after the run id. Snowflake is excluded from CI for now: SELECT claims a Snowflake organization globally, not per SELECT org, and every test account currently available is already claimed elsewhere. `make test-snowflake` still works locally against a dedicated, unclaimed fixture. Budget needs no credentials of its own — creating one makes no call to an external system — so it joins the matrix without adding any secrets.

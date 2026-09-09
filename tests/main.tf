@@ -352,6 +352,35 @@ variable "aws_sync_enabled" {
   default     = true
 }
 
+# Budget test variables.
+#
+# Unlike the four connection suites, creating a budget makes no call to an
+# external system — SELECT stores the definition directly — so this suite
+# needs nothing beyond the same API key and organization every other test
+# already uses. It still defaults to off so provider.tftest.hcl and `make
+# test`/`test-all` are unaffected by a resource that shares this root module
+# but has nothing to do with usage groups.
+variable "enable_budget_tests" {
+  description = "Whether to manage a real budget"
+  type        = bool
+  default     = false
+}
+
+variable "budget_name" {
+  description = "Display name for the budget in SELECT"
+  type        = string
+  default     = "terraform-test-budget"
+}
+
+# The rename tests need a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its own
+# variable and the name is composed below.
+variable "budget_name_suffix" {
+  description = "Appended to the budget name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -508,6 +537,28 @@ resource "select_aws_connection" "test" {
   sync_enabled = var.aws_sync_enabled
 }
 
+# Budget. count keeps it out of the way of every other test: with
+# enable_budget_tests unset there is no resource and no API call, so
+# provider.tftest.hcl and `terraform validate` run without a budgets:write
+# scope on the API key. Unlike the four connection resources above, creating a
+# budget makes no call to an external system — SELECT stores the definition
+# directly — so amount, period and the filter are literals rather than
+# variables: nothing about them depends on a fixture only CI or a local
+# operator can supply.
+resource "select_budget" "test" {
+  count = var.enable_budget_tests ? 1 : 0
+
+  name   = "${var.budget_name}${var.budget_name_suffix}"
+  amount = 1000
+
+  period = {
+    schedule_type = "monthly"
+    start_date    = "2026-01-01"
+  }
+
+  filter_expression_json = var.simple_filter_expression_json
+}
+
 # Outputs for verification. one() rather than [0]: these are unconditional, so
 # they're still evaluated — and would error on an out-of-range index — when a
 # connection suite runs with enable_usage_group_tests left at its default false.
@@ -558,4 +609,8 @@ output "bigquery_connection_id" {
 
 output "aws_connection_id" {
   value = one(select_aws_connection.test[*].id)
+}
+
+output "budget_id" {
+  value = one(select_budget.test[*].id)
 }

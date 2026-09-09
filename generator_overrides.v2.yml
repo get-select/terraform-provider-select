@@ -222,6 +222,51 @@ resources:
       create_time:
         use_state_for_unknown: true
 
+  budget:
+    description: >-
+      A spend threshold over a recurring or fixed period, optionally narrowed to a
+      team and to a slice of spend.
+
+    # BudgetV2 is the component key of the read model; its OpenAPI title is
+    # "Budget". specpatch resolves description_sources by component key, so
+    # "Budget" here would fail the build.
+    description_sources:
+      - BudgetCreate
+      - BudgetV2
+
+    attributes:
+      # team_id and filter_expression_json are the only fields this resource lets
+      # a caller clear. The generator makes them optional+computed because they
+      # appear in both the request and the response, but optional+computed means
+      # a null in the configuration keeps whatever state already holds — so
+      # removing one of these from a configuration would silently do nothing
+      # instead of reaching the API as the null that clears it. Plain optional is
+      # what makes a removal reach the API at all.
+      #
+      # started_at is deliberately not listed here even though the API also
+      # returns it: SELECT assigns it when omitted from a create, and BudgetPatch
+      # 422s on an explicit null for it, so it must stay optional+computed.
+      team_id:
+        computed_optional_required: optional
+      filter_expression_json:
+        computed_optional_required: optional
+
+      # id and created_by are set once, when the budget is created, and never
+      # change afterwards. Holding them from state keeps them out of the "known
+      # after apply" list on every unrelated update.
+      #
+      # Deliberately not listed: status, which the server clears whenever
+      # amount, period or the filter changes; etag, update_time and updated_by,
+      # which change by design; and current_period_start, current_period_end and
+      # budget_end_date, which are recomputed from period on every read and move
+      # with the calendar even when nothing about the budget itself changes.
+      id:
+        use_state_for_unknown: true
+      created_by:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
   aws_connection:
     description: >-
       A connection to one AWS payer account: the S3 location AWS delivers its Cost
