@@ -39,7 +39,7 @@ make test-aws
 make test-connections  # all four
 make test-budget       # no credentials of its own; joins CI's e2e matrix
 make test-clean        # remove local state files
-make test-sweep        # delete connections a failed run left behind
+make test-sweep        # delete connections and budgets a failed run left behind
 ```
 
 Individual cases:

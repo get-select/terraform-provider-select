@@ -172,17 +172,19 @@ test-budget:
 	@echo "Running budget tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=budget.tftest.hcl
 
-# Remove connections a failed run left attached to the organization. `terraform
-# test` tears down what it can, but a run killed mid-apply — or one whose destroy
-# the API refused — leaves a connection behind, and the next run then fails on the
-# name already being in use. Safe to run at any time: it only touches connections
-# whose name carries CI_RESOURCE_PREFIX.
+# Remove connections and budgets a failed run left attached to the organization.
+# `terraform test` tears down what it can, but a run killed mid-apply — or one
+# whose destroy the API refused — leaves a resource behind. A leaked connection
+# then fails the next run outright, on the name already being in use; a leaked
+# budget only accumulates, since SELECT allows budgets to share a name. Safe to
+# run at any time: it only touches resources whose name carries
+# CI_RESOURCE_PREFIX.
 #
 # Required environment:
 #   SELECT_API_KEY, SELECT_ORGANIZATION_ID, and optionally SELECT_API_URL
 #   CI_RESOURCE_PREFIX         defaults to terraform-test
 test-sweep:
-	@echo "Sweeping leftover test connections..."
+	@echo "Sweeping leftover test connections and budgets..."
 	./scripts/ci-cleanup-connections.sh
 
 test-clean:
@@ -245,7 +247,7 @@ help:
 	@echo "  test-aws         - Run AWS connection tests (needs a real AWS payer account and CUR bucket)"
 	@echo "  test-connections - Run all four connection test suites"
 	@echo "  test-budget      - Run budget tests (needs only an API key; no external system involved)"
-	@echo "  test-sweep       - Delete connections a failed run left behind"
+	@echo "  test-sweep       - Delete connections and budgets a failed run left behind"
 	@echo "  test-clean       - Clean up test resources and state files"
 	@echo ""
 	@echo "Run individual tests with:"
