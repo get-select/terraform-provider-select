@@ -12,6 +12,8 @@ import (
 	"terraform-provider-select/internal/provider/resource_budget"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
@@ -618,5 +620,49 @@ func TestBudgetPreconditionAndScopeDiagnostics(t *testing.T) {
 		newAPIError(403, `{"detail":"This caller lacks the budgets:write scope.","code":"forbidden"}`))
 	if !strings.Contains(forbidden.Detail(), "budgets:write") {
 		t.Errorf("a scope failure should name the scopes needed, got: %s", forbidden.Detail())
+	}
+}
+
+func TestBudgetDateValidatorAcceptsOnlyCalendarDates(t *testing.T) {
+	cases := map[string]bool{
+		"2026-01-01":           true,
+		"2026-02-28":           true,
+		"2028-02-29":           true,
+		"2026-02-31":           false,
+		"2026-13-01":           false,
+		"01/02/2026":           false,
+		"2026-1-1":             false,
+		"2026-01-01T00:00:00Z": false,
+		"":                     false,
+	}
+
+	for value, valid := range cases {
+		req := validator.StringRequest{
+			Path:        path.Root("period").AtName("start_date"),
+			ConfigValue: types.StringValue(value),
+		}
+		resp := &validator.StringResponse{}
+		dateValidator{}.ValidateString(context.Background(), req, resp)
+
+		if resp.Diagnostics.HasError() == valid {
+			t.Errorf("%q: expected valid=%v, got diagnostics %v", value, valid, resp.Diagnostics)
+		}
+	}
+}
+
+func TestBudgetDateValidatorIgnoresNullAndUnknown(t *testing.T) {
+	for name, value := range map[string]types.String{
+		"null":    types.StringNull(),
+		"unknown": types.StringUnknown(),
+	} {
+		resp := &validator.StringResponse{}
+		dateValidator{}.ValidateString(context.Background(), validator.StringRequest{
+			Path:        path.Root("period").AtName("expires_on"),
+			ConfigValue: value,
+		}, resp)
+
+		if resp.Diagnostics.HasError() {
+			t.Errorf("%s should not be checked here: %v", name, resp.Diagnostics)
+		}
 	}
 }

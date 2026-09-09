@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"terraform-provider-select/internal/provider/resource_budget"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -67,10 +68,16 @@ func budgetPeriodAttribute() schema.SingleNestedAttribute {
 			"start_date": schema.StringAttribute{
 				Required:    true,
 				Description: "The date this period's recurrence or range begins, as YYYY-MM-DD.",
+				Validators: []validator.String{
+					dateValidator{},
+				},
 			},
 			"end_date": schema.StringAttribute{
 				Optional:    true,
 				Description: "The last date of the range. Required for, and only valid with, schedule_type = fixed_range.",
+				Validators: []validator.String{
+					dateValidator{},
+				},
 			},
 			"repeat_every": schema.Int64Attribute{
 				Optional:    true,
@@ -89,6 +96,9 @@ func budgetPeriodAttribute() schema.SingleNestedAttribute {
 			"expires_on": schema.StringAttribute{
 				Optional:    true,
 				Description: "The date the recurrence stops. Valid only for a recurring or custom schedule_type.",
+				Validators: []validator.String{
+					dateValidator{},
+				},
 			},
 			"expires_after_occurrences": schema.Int64Attribute{
 				Optional:    true,
@@ -103,6 +113,32 @@ func budgetPeriodAttribute() schema.SingleNestedAttribute {
 // what budgetResourceSchema actually declares.
 func budgetPeriodType(ctx context.Context) types.ObjectType {
 	return budgetPeriodAttribute().GetType().(types.ObjectType)
+}
+
+// dateValidator rejects a period date the API would reject, at plan time
+// rather than on apply. time.Parse covers the shape and the calendar in one
+// call, so "2026-13-01" and "2026-02-31" fail here alongside "01/02/2026".
+type dateValidator struct{}
+
+func (v dateValidator) Description(context.Context) string {
+	return "value must be a date in YYYY-MM-DD form"
+}
+
+func (v dateValidator) MarkdownDescription(ctx context.Context) string {
+	return v.Description(ctx)
+}
+
+func (v dateValidator) ValidateString(ctx context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+	if _, err := time.Parse(time.DateOnly, req.ConfigValue.ValueString()); err != nil {
+		resp.Diagnostics.AddAttributeError(
+			req.Path,
+			"Invalid Budget Date",
+			fmt.Sprintf("%q is not a date in YYYY-MM-DD form.", req.ConfigValue.ValueString()),
+		)
+	}
 }
 
 func NewBudgetResource() resource.Resource {
