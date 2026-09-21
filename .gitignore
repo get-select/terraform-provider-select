@@ -15,6 +15,10 @@ terraform.tfstate.backup
 .terraform/
 .terraform.lock.hcl
 
+# Python bytecode from the usage group migration script
+__pycache__/
+*.pyc
+
 # Go build artifacts
 *.exe
 *.exe~

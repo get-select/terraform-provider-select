@@ -1,20 +1,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
 .PHONY: codegen build install clean reset test test-go test-all test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
-# The provider is generated from two OpenAPI documents: the v1 public API
-# (openapi.public.json) and the v2 API (openapi.v2.json), which is a separate
-# FastAPI app with its own document. Each needs its own generator config and its
-# own code spec; tfplugingen-framework adds packages rather than replacing the
-# output directory, so the two runs coexist.
-#
-# specpatch fills in what tfplugingen-openapi cannot produce for v2 — dropped
-# descriptions, sensitive attributes, plan modifiers. See tools/specpatch.
+# The provider is generated from the v2 API's OpenAPI document. specpatch fills
+# in what tfplugingen-openapi cannot produce — dropped descriptions, sensitive
+# attributes, plan modifiers. See tools/specpatch.
 codegen-go:
 	mkdir -p ./internal/provider
-	tfplugingen-openapi generate \
-		--config generator_config.yml \
-		--output ./internal/provider/provider_code_spec.json \
-		openapi.public.json
 	tfplugingen-openapi generate \
 		--config generator_config.v2.yml \
 		--output ./internal/provider/provider_code_spec.v2.json \
@@ -24,17 +15,13 @@ codegen-go:
 		-code-spec ./internal/provider/provider_code_spec.v2.json \
 		-overrides generator_overrides.v2.yml
 	tfplugingen-framework generate all \
-		--input ./internal/provider/provider_code_spec.json \
-		--output ./internal/provider
-	tfplugingen-framework generate all \
 		--input ./internal/provider/provider_code_spec.v2.json \
 		--output ./internal/provider
 
 codegen:
-	@echo "Fetching OpenAPI specs from public API..."
-	curl -s -o openapi.public.json https://api.select.dev/public_openapi
+	@echo "Fetching OpenAPI spec..."
 	curl -s -o openapi.v2.json https://api.select.dev/v2/openapi.json
-	@echo "OpenAPI specs downloaded successfully"
+	@echo "OpenAPI spec downloaded successfully"
 	make codegen-go
 build:
 	@echo "Building provider..."
@@ -54,8 +41,8 @@ clean:
 	go clean -i ./... || true
 	@echo "Cleaning generated provider code..."
 	rm -rf ./internal/provider/
-	@echo "Cleaning downloaded OpenAPI specs..."
-	rm -f openapi.public.json openapi.v2.json
+	@echo "Cleaning downloaded OpenAPI spec..."
+	rm -f openapi.v2.json
 	@echo "Tidying Go modules..."
 	go mod tidy
 	@echo "Clean complete!"

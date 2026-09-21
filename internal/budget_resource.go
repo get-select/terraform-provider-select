@@ -147,8 +147,10 @@ func NewBudgetResource() resource.Resource {
 		schema:             budgetResourceSchema,
 		errors:             budgetErrors,
 		specificDiagnostic: nil,
-		collectionEndpoint: budgetsEndpoint,
-		itemEndpoint:       budgetEndpoint,
+		collectionEndpoint: func(*budgetModel) string { return budgetsEndpoint },
+		itemEndpoint: func(m *budgetModel) string {
+			return budgetEndpoint(m.Id.ValueString())
+		},
 		identity: func(m *budgetModel) v2Identity {
 			return v2Identity{Id: m.Id, Etag: m.Etag}
 		},

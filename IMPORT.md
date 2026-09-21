@@ -306,9 +306,8 @@ provider "select" {
 
 # Usage Group Set resource definition
 resource "select_usage_group_set" "production_workloads" {
-  name                   = "Production Workloads"
-  order                  = 1
-  snowflake_account_uuid = "your-snowflake-account-uuid"
+  name  = "Production Workloads"
+  order = 1
 }
 
 # Usage Group resource definition

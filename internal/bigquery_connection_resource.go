@@ -14,8 +14,10 @@ func NewBigQueryConnectionResource() resource.Resource {
 		schema:             resource_bigquery_connection.BigqueryConnectionResourceSchema,
 		errors:             bigQueryConnectionErrors,
 		specificDiagnostic: bigQueryConnectionSpecificDiagnostic,
-		collectionEndpoint: bigQueryConnectionsEndpoint,
-		itemEndpoint:       bigQueryConnectionEndpoint,
+		collectionEndpoint: func(*resource_bigquery_connection.BigqueryConnectionModel) string { return bigQueryConnectionsEndpoint },
+		itemEndpoint: func(m *resource_bigquery_connection.BigqueryConnectionModel) string {
+			return bigQueryConnectionEndpoint(m.Id.ValueString())
+		},
 		identity: func(m *resource_bigquery_connection.BigqueryConnectionModel) v2Identity {
 			return v2Identity{Id: m.Id, Etag: m.Etag}
 		},

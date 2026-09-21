@@ -312,3 +312,75 @@ resources:
         use_state_for_unknown: true
       create_time:
         use_state_for_unknown: true
+
+  usage_group_set:
+    description: >-
+      A named collection of usage groups, which together attribute an
+      organization's spend. A set holds a linear history of versions; the newest
+      version holds the live groups, and the rest are frozen checkpoints.
+
+    description_sources:
+      - UsageGroupSetCreateV2
+      - UsageGroupSetV2
+
+    attributes:
+      # team_id is the one field on this resource the API lets a caller clear.
+      # The generator makes it optional+computed because it appears in both the
+      # request and the response, but optional+computed means a null in the
+      # configuration keeps whatever state already holds — so removing team_id
+      # from a configuration would leave the set on its old team instead of
+      # unowning it. Plain optional is what makes a removal reach the API as the
+      # null that clears it.
+      team_id:
+        computed_optional_required: optional
+
+      # SELECT assigns the id once, when the set is created, and never changes it.
+      # Holding it from state keeps it out of the "known after apply" list on every
+      # unrelated update.
+      #
+      # Deliberately not listed: etag, which changes by design; version, which
+      # goes up whenever a version is recorded — once per apply that touches this
+      # set's groups; and insights_sync_pending, which the nightly sync clears on
+      # its own schedule.
+      id:
+        use_state_for_unknown: true
+
+  usage_group:
+    description: >-
+      One group within a usage group set: a filter over the organization's spend,
+      an optional budget for what it matches, and the precedence it takes when its
+      filter overlaps another group's.
+
+    description_sources:
+      - UsageGroupCreateV2
+      - UsageGroupV2
+
+    attributes:
+      # usage_group_set_id is the set this group belongs to, and the generator
+      # gets it wrong in both directions. UsageGroupV2 marks it readOnly, so the
+      # generator makes it computed — but it is how a configuration says which set
+      # to create the group in, and it is a path parameter on every one of this
+      # resource's routes, so it has to be required. And UsageGroupUpdateV2 does
+      # not carry it, so the API has no way to move a group between sets: a change
+      # has to replace the group.
+      usage_group_set_id:
+        computed_optional_required: required
+        requires_replace: true
+
+      # A usage group always has a filter — UsageGroupCreateV2 demands exactly one
+      # of filter_expression or filter_expression_json, and filter_expression is
+      # ignored by the generator (see generator_config.v2.yml), leaving this
+      # attribute as the only way to supply one. The generator makes it
+      # optional+computed because it appears in both the request and the response.
+      filter_expression_json:
+        computed_optional_required: required
+
+      # SELECT assigns these once, when the group is created, and never changes
+      # them. Holding them from state keeps them out of the "known after apply"
+      # list on every unrelated update.
+      #
+      # Deliberately not listed: etag and update_time, which change by design.
+      id:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true

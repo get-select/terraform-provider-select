@@ -14,17 +14,17 @@ This provider is built using:
 - **[Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework)** - Modern Terraform provider development
 - **[tfplugingen-openapi](https://github.com/hashicorp/terraform-plugin-codegen-openapi)** - OpenAPI to Terraform schema generation  
 - **[tfplugingen-framework](https://github.com/hashicorp/terraform-plugin-codegen-framework)** - Framework code generation
-- **SELECT's OpenAPI Specs** - Single source of truth, hosted at `https://api.select.dev/public_openapi` (v1) and `https://api.select.dev/v2/openapi.json` (v2)
+- **SELECT's OpenAPI Spec** - Single source of truth, hosted at `https://api.select.dev/v2/openapi.json`
 
 ### Code Generation Workflow
 
-The provider code is generated from SELECT's OpenAPI specifications. SELECT's v2 API is a separate application with its own document, so each version has its own generator config and its own code spec:
+The provider code is generated from SELECT's v2 OpenAPI specification:
 
-1. **Fetch OpenAPI Specs**: Downloads the latest v1 and v2 specs
-2. **Generate Schema**: `tfplugingen-openapi` converts each spec to Terraform schema definitions
-3. **Patch Schema**: `tools/specpatch` fills in what `tfplugingen-openapi` cannot produce for v2 — descriptions it drops for nullable fields, sensitive attributes, and plan modifiers
+1. **Fetch OpenAPI Spec**: Downloads the latest spec
+2. **Generate Schema**: `tfplugingen-openapi` converts it to Terraform schema definitions
+3. **Patch Schema**: `tools/specpatch` fills in what `tfplugingen-openapi` cannot produce — descriptions it drops for nullable fields, sensitive attributes, and plan modifiers
 4. **Generate Code**: `tfplugingen-framework` creates the final provider code
-5. **Manual Customization**: `generator_config*.yml` and `generator_overrides.v2.yml` allow for customizations and overrides
+5. **Manual Customization**: `generator_config.v2.yml` and `generator_overrides.v2.yml` allow for customizations and overrides
 
 This ensures the provider stays in sync with SELECT's API automatically.
 
@@ -32,8 +32,8 @@ This ensures the provider stays in sync with SELECT's API automatically.
 
 | Resource | API |
 | --- | --- |
-| `select_usage_group_set` | v1 |
-| `select_usage_group` | v1 |
+| `select_usage_group_set` | v2 |
+| `select_usage_group` | v2 |
 | `select_snowflake_account` | v2 |
 | `select_databricks_connection` | v2 |
 | `select_bigquery_connection` | v2 |
@@ -93,7 +93,7 @@ make setup-dev-overrides
 
 2. **Making Changes**:
    ```bash
-   # After modifying generator_config.yml or when API updates:
+   # After modifying generator_config.v2.yml or when API updates:
    make reset
    
    # For code-only changes (if manually editing generated code):
@@ -116,8 +116,8 @@ make setup-dev-overrides
 
 ## Configuration Files
 
-### `generator_config.yml`, `generator_config.v2.yml`
-Configure the code generation process, one per API version:
+### `generator_config.v2.yml`
+Configures the code generation process:
 - Resource mappings (API endpoints to Terraform resources)
 - Attribute aliases and descriptions
 - Ignored fields that don't map well to Terraform
@@ -154,7 +154,6 @@ terraform-provider-select/
 ├── tests/                      # Provider tests
 ├── docs/                       # Generated documentation
 ├── examples/                   # Usage examples
-├── generator_config.yml        # v1 code generation configuration
 ├── generator_config.v2.yml     # v2 code generation configuration
 ├── generator_overrides.v2.yml  # v2 schema details codegen cannot express
 ├── Makefile                    # Development commands
@@ -163,13 +162,13 @@ terraform-provider-select/
 
 ## OpenAPI Dependency
 
-**Important**: This provider is entirely dependent on SELECT's OpenAPI specifications. They are:
+**Important**: This provider is entirely dependent on SELECT's OpenAPI specification. It is:
 
-- **Hosted at**: `https://api.select.dev/public_openapi` (v1) and `https://api.select.dev/v2/openapi.json` (v2)
-- **Auto-fetched**: Every `make codegen` downloads the latest of both
+- **Hosted at**: `https://api.select.dev/v2/openapi.json`
+- **Auto-fetched**: Every `make codegen` downloads the latest
 - **Single Source of Truth**: Changes to the API automatically reflect in the provider
 
-If either endpoint is unavailable, the code generation will fail. For offline development, you can work with previously downloaded `openapi.public.json` and `openapi.v2.json` files and run `make codegen-go`, which skips the download.
+If that endpoint is unavailable, the code generation will fail. For offline development, you can work with a previously downloaded `openapi.v2.json` and run `make codegen-go`, which skips the download.
 
 ## Testing
 
@@ -230,20 +229,20 @@ Releases are automated via GitHub Actions when tags are pushed, you can also cre
 
 1. **Fork** the repository
 2. **Create a feature branch** from `main`
-3. **Make your changes** to `generator_config.yml` or core provider files
+3. **Make your changes** to `generator_config.v2.yml` or core provider files
 4. **Test your changes** with `make test`
 5. **Submit a pull request**
 
 ### Common Development Tasks
 
 **Adding a new resource**:
-1. Update `generator_config.yml` with the new resource configuration
+1. Update `generator_config.v2.yml` with the new resource configuration
 2. Run `make reset` to regenerate code
 3. Add any custom logic in `internal/`
 4. Add tests in `tests/`
 
 **Modifying existing resources**:
-1. Update the relevant section in `generator_config.yml`
+1. Update the relevant section in `generator_config.v2.yml`
 2. Run `make reset`
 3. Test changes with `make test`
 

@@ -40,10 +40,31 @@ type v2Resource[TModel, TResponse any] struct {
 	// (AWS's 503). May be nil for a resource with nothing extra to say.
 	specificDiagnostic v2Diagnostic
 
-	collectionEndpoint string
-	itemEndpoint       func(id string) string
+	// collectionEndpoint is where a create posts, and itemEndpoint is where a
+	// read, update or delete goes. Both take the model rather than an id,
+	// because a resource nested under a parent — a usage group under its set —
+	// needs the parent's id in its path as well as its own.
+	collectionEndpoint func(model *TModel) string
+	itemEndpoint       func(model *TModel) string
 	// identity reads the ID and ETag a write or delete needs out of a model.
 	identity func(model *TModel) v2Identity
+	// prepareWrite runs before a create, update or delete issues its request,
+	// for a resource that needs something to happen first — a usage group
+	// records a version of its set. Nil for a resource with nothing to prepare.
+	prepareWrite func(ctx context.Context, client *APIClient, model *TModel) diag.Diagnostics
+	// selfInflicted412 reports whether a precondition failure is one this
+	// provider caused earlier in the same apply rather than a change someone
+	// else made. Recording a version changes the set it belongs to, so an ETag
+	// read before that no longer matches — a failure the user did nothing to
+	// cause and can do nothing about. Saying true here gets the write retried
+	// once against a freshly read ETag; a 412 from real drift still surfaces,
+	// which is the whole point of sending If-Match. Nil for a resource nothing
+	// else in the apply invalidates.
+	selfInflicted412 func(client *APIClient, model *TModel) bool
+	// importState parses a `terraform import` address into state. Nil means the
+	// address is the resource's own id, which is all a top-level resource needs;
+	// a nested one has to carry its parent's id too.
+	importState func(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse)
 
 	createPayload func(ctx context.Context, plan *TModel) (any, diag.Diagnostics)
 	updatePayload func(ctx context.Context, plan, state *TModel) (any, diag.Diagnostics)
@@ -96,7 +117,70 @@ func (r *v2Resource[TModel, TResponse]) Schema(ctx context.Context, req resource
 }
 
 func (r *v2Resource[TModel, TResponse]) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	if r.importState != nil {
+		r.importState(ctx, req, resp)
+		return
+	}
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// prepare runs the resource's prepareWrite hook, if it has one.
+func (r *v2Resource[TModel, TResponse]) prepare(ctx context.Context, model *TModel) diag.Diagnostics {
+	if r.prepareWrite == nil {
+		return nil
+	}
+	return r.prepareWrite(ctx, r.client, model)
+}
+
+// freshEtag re-reads the resource and returns the ETag it currently has, for
+// retrying a write this provider itself invalidated. See selfInflicted412.
+func (r *v2Resource[TModel, TResponse]) freshEtag(ctx context.Context, state *TModel) (types.String, diag.Diagnostics) {
+	var response TResponse
+	apiErr, diags := r.client.doRequest(ctx, http.MethodGet, r.itemEndpoint(state), nil, &response, requestOptions{})
+	if diags.HasError() {
+		return types.StringNull(), diags
+	}
+	if apiErr != nil {
+		return types.StringNull(), diag.Diagnostics{
+			r.errors.diagnostic("re-read "+r.errors.Object, apiErr, r.specificDiagnostic),
+		}
+	}
+
+	refreshed := *state
+	diags = r.applyResponse(ctx, &refreshed, state, &response)
+	if diags.HasError() {
+		return types.StringNull(), diags
+	}
+	return r.identity(&refreshed).Etag, nil
+}
+
+// write issues a write that carries an ETag, retrying once against a fresh one
+// when the resource says the precondition failure was this provider's own
+// doing. The retry re-reads rather than trusting any ETag it already holds, so
+// a change made outside Terraform between the two attempts still fails the
+// second one.
+func (r *v2Resource[TModel, TResponse]) write(ctx context.Context, method string, state *TModel, request any, response *TResponse) (*apiError, diag.Diagnostics) {
+	etag := r.identity(state).Etag
+
+	apiErr, diags := r.client.doRequest(ctx, method, r.itemEndpoint(state), request, response, requestOptions{
+		headers: ifMatchHeader(etag),
+	})
+	if diags.HasError() || apiErr == nil {
+		return apiErr, diags
+	}
+	if apiErr.StatusCode != http.StatusPreconditionFailed ||
+		r.selfInflicted412 == nil || !r.selfInflicted412(r.client, state) {
+		return apiErr, diags
+	}
+
+	fresh, freshDiags := r.freshEtag(ctx, state)
+	if freshDiags.HasError() {
+		return apiErr, freshDiags
+	}
+
+	return r.client.doRequest(ctx, method, r.itemEndpoint(state), request, response, requestOptions{
+		headers: ifMatchHeader(fresh),
+	})
 }
 
 func (r *v2Resource[TModel, TResponse]) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
@@ -127,8 +211,15 @@ func (r *v2Resource[TModel, TResponse]) Create(ctx context.Context, req resource
 		return
 	}
 
+	// A create carries no ETag — there is nothing yet to have changed — but the
+	// preparation itself may still be needed.
+	resp.Diagnostics.Append(r.prepare(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	var response TResponse
-	apiErr, diags := r.client.doRequest(ctx, http.MethodPost, r.collectionEndpoint, request, &response, requestOptions{})
+	apiErr, diags := r.client.doRequest(ctx, http.MethodPost, r.collectionEndpoint(&plan), request, &response, requestOptions{})
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -154,9 +245,8 @@ func (r *v2Resource[TModel, TResponse]) Read(ctx context.Context, req resource.R
 		return
 	}
 
-	identity := r.identity(&state)
 	var response TResponse
-	apiErr, diags := r.client.doRequest(ctx, http.MethodGet, r.itemEndpoint(identity.Id.ValueString()), nil, &response, requestOptions{})
+	apiErr, diags := r.client.doRequest(ctx, http.MethodGet, r.itemEndpoint(&state), nil, &response, requestOptions{})
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -195,11 +285,13 @@ func (r *v2Resource[TModel, TResponse]) Update(ctx context.Context, req resource
 		return
 	}
 
-	identity := r.identity(&state)
+	resp.Diagnostics.Append(r.prepare(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	var response TResponse
-	apiErr, diags := r.client.doRequest(ctx, http.MethodPatch, r.itemEndpoint(identity.Id.ValueString()), request, &response, requestOptions{
-		headers: ifMatchHeader(identity.Etag),
-	})
+	apiErr, diags := r.write(ctx, http.MethodPatch, &state, request, &response)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -225,10 +317,12 @@ func (r *v2Resource[TModel, TResponse]) Delete(ctx context.Context, req resource
 		return
 	}
 
-	identity := r.identity(&state)
-	apiErr, diags := r.client.doRequest(ctx, http.MethodDelete, r.itemEndpoint(identity.Id.ValueString()), nil, nil, requestOptions{
-		headers: ifMatchHeader(identity.Etag),
-	})
+	resp.Diagnostics.Append(r.prepare(ctx, &state)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	apiErr, diags := r.write(ctx, http.MethodDelete, &state, nil, nil)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

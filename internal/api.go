@@ -8,15 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
-	"reflect"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 type HTTPClient struct {
@@ -88,119 +84,10 @@ func handleHTTPError(operation string, err error) diag.Diagnostics {
 	}
 }
 
-func handleResponseError(operation string, statusCode int, body string) diag.Diagnostics {
-	return diag.Diagnostics{
-		diag.NewErrorDiagnostic("API Error", fmt.Sprintf("API returned status %d during %s: %s", statusCode, operation, body)),
-	}
-}
-
 func handleJSONError(operation string, err error) diag.Diagnostics {
 	return diag.Diagnostics{
 		diag.NewErrorDiagnostic("JSON Error", fmt.Sprintf("Failed to parse JSON during %s: %v", operation, err)),
 	}
-}
-
-// convertTerraformToAPI converts Terraform framework types to simple Go types for JSON marshaling
-// This handles types.String -> string, types.Int64 -> int64, etc.
-func convertTerraformToAPI(src interface{}) interface{} {
-	if src == nil {
-		return nil
-	}
-
-	srcValue := reflect.ValueOf(src)
-	if srcValue.Kind() == reflect.Ptr {
-		if srcValue.IsNil() {
-			return nil
-		}
-		srcValue = srcValue.Elem()
-	}
-
-	switch srcValue.Type() {
-	// Handle Terraform framework types
-	case reflect.TypeOf(types.String{}):
-		tfString := srcValue.Interface().(types.String)
-		if tfString.IsNull() || tfString.IsUnknown() {
-			return nil
-		}
-		return tfString.ValueString()
-
-	case reflect.TypeOf(types.Int64{}):
-		tfInt64 := srcValue.Interface().(types.Int64)
-		if tfInt64.IsNull() || tfInt64.IsUnknown() {
-			return nil
-		}
-		return tfInt64.ValueInt64()
-
-	case reflect.TypeOf(types.Bool{}):
-		tfBool := srcValue.Interface().(types.Bool)
-		if tfBool.IsNull() || tfBool.IsUnknown() {
-			return nil
-		}
-		return tfBool.ValueBool()
-
-	case reflect.TypeOf(types.Float64{}):
-		tfFloat64 := srcValue.Interface().(types.Float64)
-		if tfFloat64.IsNull() || tfFloat64.IsUnknown() {
-			return nil
-		}
-		return tfFloat64.ValueFloat64()
-
-	case reflect.TypeOf(types.Number{}):
-		tfNumber := srcValue.Interface().(types.Number)
-		if tfNumber.IsNull() || tfNumber.IsUnknown() {
-			return nil
-		}
-		// Convert types.Number to float64 for JSON serialization
-		bigFloat := tfNumber.ValueBigFloat()
-		if bigFloat == nil {
-			return nil
-		}
-		float64Value, _ := bigFloat.Float64()
-		return float64Value
-	}
-
-	// Handle structs by recursively converting fields
-	if srcValue.Kind() == reflect.Struct {
-		result := make(map[string]interface{})
-		srcType := srcValue.Type()
-
-		for i := 0; i < srcValue.NumField(); i++ {
-			field := srcType.Field(i)
-			fieldValue := srcValue.Field(i)
-
-			if !fieldValue.CanInterface() {
-				continue
-			}
-
-			jsonTag := field.Tag.Get("json")
-			if jsonTag == "" || jsonTag == "-" {
-				jsonTag = field.Tag.Get("tfsdk")
-			}
-			if jsonTag == "" {
-				jsonTag = field.Name
-			}
-
-			if commaIdx := len(jsonTag); commaIdx > 0 {
-				for j, char := range jsonTag {
-					if char == ',' {
-						commaIdx = j
-						break
-					}
-				}
-				jsonTag = jsonTag[:commaIdx]
-			}
-
-			convertedValue := convertTerraformToAPI(fieldValue.Interface())
-
-			if convertedValue != nil {
-				result[jsonTag] = convertedValue
-			}
-		}
-
-		return result
-	}
-
-	return srcValue.Interface()
 }
 
 // normalizeJSON normalizes a JSON string to ensure consistent key ordering
@@ -218,124 +105,22 @@ func normalizeJSON(jsonStr string) (string, error) {
 	return string(normalized), nil
 }
 
-// updateTerraformFromAPI updates Terraform framework types from simple Go types (JSON response)
-func updateTerraformFromAPI(dst interface{}, src map[string]interface{}) {
-	dstValue := reflect.ValueOf(dst)
-	if dstValue.Kind() != reflect.Ptr || dstValue.IsNil() {
-		return
-	}
-
-	dstValue = dstValue.Elem()
-	if dstValue.Kind() != reflect.Struct {
-		return
-	}
-
-	dstType := dstValue.Type()
-
-	for i := 0; i < dstValue.NumField(); i++ {
-		field := dstType.Field(i)
-		fieldValue := dstValue.Field(i)
-
-		if !fieldValue.CanSet() {
-			continue
-		}
-
-		jsonTag := field.Tag.Get("json")
-		if jsonTag == "" || jsonTag == "-" {
-			jsonTag = field.Tag.Get("tfsdk")
-		}
-		if jsonTag == "" {
-			jsonTag = field.Name
-		}
-
-		if commaIdx := len(jsonTag); commaIdx > 0 {
-			for j, char := range jsonTag {
-				if char == ',' {
-					commaIdx = j
-					break
-				}
-			}
-			jsonTag = jsonTag[:commaIdx]
-		}
-
-		apiValue, exists := src[jsonTag]
-		if !exists {
-			continue
-		}
-
-		switch fieldValue.Type() {
-		case reflect.TypeOf(types.String{}):
-			if apiValue == nil {
-				fieldValue.Set(reflect.ValueOf(types.StringNull()))
-			} else if str, ok := apiValue.(string); ok {
-				// Normalize JSON for filter_expression_json field
-				if jsonTag == "filter_expression_json" {
-					if normalizedStr, err := normalizeJSON(str); err == nil {
-						fieldValue.Set(reflect.ValueOf(types.StringValue(normalizedStr)))
-					} else {
-						fieldValue.Set(reflect.ValueOf(types.StringValue(str)))
-					}
-				} else {
-					fieldValue.Set(reflect.ValueOf(types.StringValue(str)))
-				}
-			}
-
-		case reflect.TypeOf(types.Int64{}):
-			if apiValue == nil {
-				fieldValue.Set(reflect.ValueOf(types.Int64Null()))
-			} else {
-				switch v := apiValue.(type) {
-				case int64:
-					fieldValue.Set(reflect.ValueOf(types.Int64Value(v)))
-				case float64:
-					fieldValue.Set(reflect.ValueOf(types.Int64Value(int64(v))))
-				}
-			}
-
-		case reflect.TypeOf(types.Bool{}):
-			if apiValue == nil {
-				fieldValue.Set(reflect.ValueOf(types.BoolNull()))
-			} else if b, ok := apiValue.(bool); ok {
-				fieldValue.Set(reflect.ValueOf(types.BoolValue(b)))
-			}
-
-		case reflect.TypeOf(types.Float64{}):
-			if apiValue == nil {
-				fieldValue.Set(reflect.ValueOf(types.Float64Null()))
-			} else if f, ok := apiValue.(float64); ok {
-				fieldValue.Set(reflect.ValueOf(types.Float64Value(f)))
-			}
-
-		case reflect.TypeOf(types.Number{}):
-			if apiValue == nil {
-				fieldValue.Set(reflect.ValueOf(types.NumberNull()))
-			} else {
-				switch v := apiValue.(type) {
-				case int64:
-					fieldValue.Set(reflect.ValueOf(types.NumberValue(big.NewFloat(float64(v)))))
-				case float64:
-					fieldValue.Set(reflect.ValueOf(types.NumberValue(big.NewFloat(v))))
-				case int:
-					fieldValue.Set(reflect.ValueOf(types.NumberValue(big.NewFloat(float64(v)))))
-				}
-			}
-		}
-	}
-}
-
-type VersionResponse struct {
-	Id               string `json:"id"`
-	CreatedAt        string `json:"created_at"`
-	CreatedBy        string `json:"created_by"`
-	UsageGroupSetId  string `json:"usage_group_set_id"`
+// setVersion tracks one usage group set's version for the current apply. See
+// APIClient.EnsureVersion.
+type setVersion struct {
+	once     sync.Once
+	recorded bool
+	diags    diag.Diagnostics
 }
 
 type APIClient struct {
 	httpClient *HTTPClient
-	// Ensures all resources in the same apply use the same version
-	versionID string
-	versionOnce sync.Once
-	versionError error
+	// versions holds one entry per usage group set this apply has written to,
+	// so every set gets exactly one version rather than only the first set to
+	// be touched. Guarded by versionsMu; the setVersion it points at does its
+	// own synchronization.
+	versions   map[string]*setVersion
+	versionsMu sync.Mutex
 }
 
 func NewAPIClient(apiKey, organizationId, baseURL string) *APIClient {
@@ -438,15 +223,7 @@ func (c *APIClient) doRequest(ctx context.Context, method, endpoint string, requ
 	var body io.Reader
 
 	if requestBody != nil {
-		payload := requestBody
-		// Terraform framework types are not directly marshalable, so a model
-		// passed straight from state is converted first. Callers that build their
-		// own request struct already hold plain Go values.
-		if !isPlainStruct(requestBody) {
-			payload = convertTerraformToAPI(requestBody)
-		}
-
-		jsonData, err := json.Marshal(payload)
+		jsonData, err := json.Marshal(requestBody)
 		if err != nil {
 			return nil, handleJSONError("marshal request", err)
 		}
@@ -474,127 +251,77 @@ func (c *APIClient) doRequest(ctx context.Context, method, endpoint string, requ
 		return nil, nil
 	}
 
-	responseValue := reflect.ValueOf(responseBody)
-	if responseValue.Kind() != reflect.Ptr || responseValue.Elem().Kind() != reflect.Struct {
-		return nil, nil
-	}
-
-	if isPlainStruct(responseBody) {
-		if err := json.Unmarshal([]byte(bodyStr), responseBody); err != nil {
-			return nil, handleJSONError("unmarshal response", err)
-		}
-		return nil, nil
-	}
-
-	var apiResponse map[string]interface{}
-	if err := json.Unmarshal([]byte(bodyStr), &apiResponse); err != nil {
+	if err := json.Unmarshal([]byte(bodyStr), responseBody); err != nil {
 		return nil, handleJSONError("unmarshal response", err)
 	}
-	updateTerraformFromAPI(responseBody, apiResponse)
 	return nil, nil
 }
 
-// isPlainStruct reports whether a struct is built from ordinary Go types, as
-// opposed to a Terraform framework model. Only the former can go through
-// encoding/json directly.
-func isPlainStruct(value interface{}) bool {
-	structValue := reflect.ValueOf(value)
-	if structValue.Kind() == reflect.Ptr {
-		if structValue.IsNil() {
-			return false
-		}
-		structValue = structValue.Elem()
+// EnsureVersion records a version of a usage group set's groups, once per set
+// per apply, before this apply changes any of them.
+//
+// A version is a frozen copy of the set's groups. Usage group writes change the
+// newest version in place and never add one on their own, so without this every
+// apply would overwrite the state the previous apply left, and nothing would be
+// restorable. Recording one first means an apply's changes land on a fresh copy
+// and the state the apply started from survives as a checkpoint — the behavior
+// the v1 API gave through POST /versions, kept unchanged.
+//
+// Terraform offers a provider no apply-level hook, so there is nowhere to do
+// this except inside the first write that needs it. The APIClient lives for one
+// apply, so per-set state on it is per-apply state.
+//
+// Concurrent callers for the same set block until the first finishes; callers
+// for different sets do not contend. Terraform applies at a default parallelism
+// of 10, so several groups in the same set reach this at once.
+func (c *APIClient) EnsureVersion(ctx context.Context, usageGroupSetId string) diag.Diagnostics {
+	c.versionsMu.Lock()
+	if c.versions == nil {
+		c.versions = map[string]*setVersion{}
 	}
-	if structValue.Kind() != reflect.Struct {
-		return false
+	version, started := c.versions[usageGroupSetId]
+	if !started {
+		version = &setVersion{}
+		c.versions[usageGroupSetId] = version
 	}
+	c.versionsMu.Unlock()
 
-	structType := structValue.Type()
-	for i := 0; i < structType.NumField(); i++ {
-		field := structType.Field(i)
-		if _, hasJSON := field.Tag.Lookup("json"); !hasJSON {
-			continue
-		}
-		if field.Type.PkgPath() == "" || !strings.Contains(field.Type.String(), "types.") {
-			return true
-		}
-	}
-	return false
-}
-
-// doJSONRequest handles JSON requests and responses, reporting everything as
-// diagnostics. A 404 is a warning rather than an error, which the v1 usage group
-// resources rely on; callers that need to act on the status use doRequest.
-func (c *APIClient) doJSONRequest(ctx context.Context, method, endpoint string, requestBody interface{}, responseBody interface{}) diag.Diagnostics {
-	apiErr, diags := c.doRequest(ctx, method, endpoint, requestBody, responseBody, requestOptions{})
-	if diags.HasError() {
-		return diags
-	}
-	if apiErr == nil {
-		return diags
-	}
-
-	if apiErr.StatusCode == http.StatusNotFound {
-		return diag.Diagnostics{
-			diag.NewWarningDiagnostic("Resource Not Found", fmt.Sprintf("Resource not found at %s", endpoint)),
-		}
-	}
-	return handleResponseError(fmt.Sprintf("%s %s", method, endpoint), apiErr.StatusCode, apiErr.Body)
-}
-
-func (c *APIClient) Get(ctx context.Context, endpoint string, responseBody interface{}) diag.Diagnostics {
-	return c.doJSONRequest(ctx, "GET", endpoint, nil, responseBody)
-}
-
-func (c *APIClient) Post(ctx context.Context, endpoint string, requestBody interface{}, responseBody interface{}) diag.Diagnostics {
-	return c.doJSONRequest(ctx, "POST", endpoint, requestBody, responseBody)
-}
-
-func (c *APIClient) Put(ctx context.Context, endpoint string, requestBody interface{}, responseBody interface{}) diag.Diagnostics {
-	return c.doJSONRequest(ctx, "PUT", endpoint, requestBody, responseBody)
-}
-
-func (c *APIClient) Delete(ctx context.Context, endpoint string) diag.Diagnostics {
-	return c.doJSONRequest(ctx, "DELETE", endpoint, nil, nil)
-}
-
-func (c *APIClient) GetOrganizationId() string {
-	return c.httpClient.organizationId
-}
-
-// GetOrCreateVersion creates a new version for the usage group set if one hasn't been created yet
-// for the current apply operation. Returns the version ID.
-func (c *APIClient) GetOrCreateVersion(ctx context.Context, usageGroupSetId string) (string, diag.Diagnostics) {
-	c.versionOnce.Do(func() {
-		orgId := c.GetOrganizationId()
-		endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/versions", orgId, usageGroupSetId)
-
-		versionRequest := map[string]interface{}{}
-
-		var versionResponse VersionResponse
-		creationDiags := c.Post(ctx, endpoint, versionRequest, &versionResponse)
-
-		if creationDiags.HasError() {
-			c.versionError = fmt.Errorf("failed to create version: %v", creationDiags)
+	version.once.Do(func() {
+		var response usageGroupSetVersionResponse
+		// No If-Match: the checkpoint should capture the set as it stands when
+		// this runs. Sending an ETag read before the apply began would fail on a
+		// set another caller has touched since, which is not this call's
+		// business — it only records what is there now.
+		apiErr, diags := c.doRequest(ctx, http.MethodPost,
+			usageGroupSetVersionsEndpoint(usageGroupSetId), nil, &response, requestOptions{})
+		if diags.HasError() {
+			version.diags = diags
 			return
 		}
-		
-		if versionResponse.Id == "" {
-			c.versionError = fmt.Errorf("API returned empty version ID")
+		if apiErr != nil {
+			version.diags = diag.Diagnostics{
+				usageGroupSetErrors.diagnostic("record a version of the usage group set", apiErr, nil),
+			}
 			return
 		}
-
-		c.versionID = versionResponse.Id
+		version.recorded = true
 	})
 
-	if c.versionError != nil {
-		return "", diag.Diagnostics{
-			diag.NewErrorDiagnostic(
-				"Version Creation Error",
-				c.versionError.Error(),
-			),
-		}
-	}
+	return version.diags
+}
 
-	return c.versionID, diag.Diagnostics{}
+// VersionRecorded reports whether this apply has already recorded a version of
+// the given set.
+//
+// It is how a write knows its ETag may be stale through no fault of the user:
+// recording a version changes the set, so an ETag read before that no longer
+// matches. A caller that gets true re-reads what it is about to write rather
+// than sending an ETag this provider itself invalidated. See
+// usageGroupSetResource and usageGroupResource for where that happens.
+func (c *APIClient) VersionRecorded(usageGroupSetId string) bool {
+	c.versionsMu.Lock()
+	defer c.versionsMu.Unlock()
+
+	version, started := c.versions[usageGroupSetId]
+	return started && version.recorded
 }

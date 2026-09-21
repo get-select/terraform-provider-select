@@ -21,8 +21,10 @@ func NewSnowflakeAccountResource() resource.Resource {
 		schema:             resource_snowflake_account.SnowflakeAccountResourceSchema,
 		errors:             snowflakeAccountErrors,
 		specificDiagnostic: snowflakeAccountSpecificDiagnostic,
-		collectionEndpoint: snowflakeAccountsEndpoint,
-		itemEndpoint:       snowflakeAccountEndpoint,
+		collectionEndpoint: func(*resource_snowflake_account.SnowflakeAccountModel) string { return snowflakeAccountsEndpoint },
+		itemEndpoint: func(m *resource_snowflake_account.SnowflakeAccountModel) string {
+			return snowflakeAccountEndpoint(m.Id.ValueString())
+		},
 		identity: func(m *resource_snowflake_account.SnowflakeAccountModel) v2Identity {
 			return v2Identity{Id: m.Id, Etag: m.Etag}
 		},

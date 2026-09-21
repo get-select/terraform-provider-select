@@ -27,3 +27,23 @@ You can obtain the usage group set ID by navigating to the usage group set in th
 ### Usage Group Set Ordering
 
 The `order` field determines the display order in the Select UI.
+
+### Versioning
+
+A version is a frozen copy of a set's usage groups. SELECT keeps them as a
+linear history: the newest version holds the live groups, and the rest are
+checkpoints you can restore from.
+
+Writing a usage group changes the newest version in place; it never adds one. So
+before the first change it makes to a set's groups, this provider records a
+version. Each `terraform apply` therefore leaves behind exactly one checkpoint of
+the state that apply started from, however many groups it went on to change, and
+however many sets it touched — one per set.
+
+The `version` attribute is the number of versions the set has. It goes up by one
+per apply that changes any of the set's groups, and stays put for an apply that
+only changes the set itself — its name, order, team or visibility.
+
+You do not need to configure any of this. It is listed here because the count is
+visible in state and in the SELECT UI, and because it explains why an apply that
+changes one usage group also updates its set.

@@ -233,3 +233,75 @@ run "update_usage_group" {
     error_message = "Usage group ID should remain stable during updates"
   }
 }
+
+# Test 8: The attributes v2 added, and the ones it removed.
+#
+# organization_id is gone: v1 carried the organization in the path, so the
+# resource had an attribute for it, and v2 scopes by the x-tenant-id header the
+# provider block already supplies. A configuration that still sets it fails to
+# validate, which is the breaking part of this migration.
+run "v2_attributes_are_populated" {
+  command = apply
+
+  # ETags drive optimistic concurrency on every v2 write. Without one in state
+  # an update would have nothing to send as If-Match and the API would refuse it
+  # with 428.
+  assert {
+    condition     = select_usage_group_set.test_org[0].etag != null && select_usage_group_set.test_org[0].etag != ""
+    error_message = "A usage group set should carry the ETag its updates send as If-Match"
+  }
+
+  assert {
+    condition     = select_usage_group.test_basic[0].etag != null && select_usage_group.test_basic[0].etag != ""
+    error_message = "A usage group should carry the ETag its updates send as If-Match"
+  }
+
+  # Recording a version is what keeps the state an apply started from
+  # restorable. Every apply that touches a set's groups records exactly one, so
+  # by now the count has moved past the 1 a freshly created set has.
+  assert {
+    condition     = select_usage_group_set.test_org[0].version > 1
+    error_message = "Each apply that changes a set's groups should record one version, so the count should have grown"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_org[0].public != null
+    error_message = "public should be resolved rather than left unknown"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_org[0].insights_sync_pending != null
+    error_message = "insights_sync_pending should be resolved rather than left unknown"
+  }
+
+  assert {
+    condition     = select_usage_group.test_basic[0].create_time != null && select_usage_group.test_basic[0].update_time != null
+    error_message = "A usage group should carry the timestamps v2 renamed from created_at/updated_at"
+  }
+
+  assert {
+    condition     = select_usage_group.test_basic[0].usage_group_set_id == select_usage_group_set.test_org[0].id
+    error_message = "A usage group should stay attached to the set it was created in"
+  }
+}
+
+# Test 9: Clearing a budget.
+#
+# budget is the one field on a usage group the API lets a caller clear, so
+# removing it from the configuration has to reach the API as an explicit null.
+# Omitting the key would leave the old budget in place and the apply would fail
+# on an inconsistent result.
+run "clear_usage_group_budget" {
+  command = apply
+
+  variables {
+    usage_group_name   = "terraform-test-group-updated"
+    usage_group_order  = 3
+    usage_group_budget = null
+  }
+
+  assert {
+    condition     = select_usage_group.test_basic[0].budget == null
+    error_message = "Removing budget from the configuration should clear it rather than leave the old value"
+  }
+}

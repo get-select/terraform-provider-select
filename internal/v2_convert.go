@@ -120,6 +120,33 @@ func changedNumber(plan, state types.Number) *float64 {
 	return numberPointer(plan)
 }
 
+// changedInt64 is changedString's counterpart for types.Int64.
+func changedInt64(plan, state types.Int64) *int64 {
+	if plan.Equal(state) {
+		return nil
+	}
+	return int64Pointer(plan)
+}
+
+// nullableNumber is nullableString's counterpart, for a clearable numeric field
+// such as a usage group's budget. See nullableString for why the distinction
+// between "omitted" and "explicitly null" has to survive into the request body.
+type nullableNumber struct {
+	value *float64
+}
+
+func (n nullableNumber) MarshalJSON() ([]byte, error) {
+	return json.Marshal(n.value)
+}
+
+// clearedNumber is clearedString's counterpart for types.Number.
+func clearedNumber(plan, state types.Number) *nullableNumber {
+	if plan.IsUnknown() || plan.Equal(state) {
+		return nil
+	}
+	return &nullableNumber{value: numberPointer(plan)}
+}
+
 func stringListPointer(ctx context.Context, value types.List) (*[]string, diag.Diagnostics) {
 	if value.IsNull() || value.IsUnknown() {
 		return nil, nil
