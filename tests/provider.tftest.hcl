@@ -306,3 +306,39 @@ run "clear_usage_group_budget" {
     error_message = "Removing budget from the configuration should clear it rather than leave the old value"
   }
 }
+
+# Test 10: Deleting the sets and their groups.
+#
+# Terraform's own teardown would remove them anyway, but it asserts nothing and
+# swallows what it cannot remove, so a delete the API refuses has to fail here
+# instead. Each group delete records a version of its set, which rotates the
+# ETags that the remaining deletes send as If-Match. This step therefore also
+# exercises the self-inflicted 412 retry against the real API.
+run "delete_usage_groups" {
+  command = apply
+
+  variables {
+    usage_group_name_suffix  = "-updated"
+    usage_group_order        = 3
+    usage_group_budget       = null
+    enable_usage_group_tests = false
+  }
+
+  assert {
+    condition = (
+      length(select_usage_group.test_basic) == 0 &&
+      length(select_usage_group.test_with_budget) == 0 &&
+      length(select_usage_group.test_complex_filter) == 0
+    )
+    error_message = "Every usage group should have been destroyed"
+  }
+
+  assert {
+    condition = (
+      length(select_usage_group_set.test_org) == 0 &&
+      length(select_usage_group_set.test_team) == 0 &&
+      length(select_usage_group_set.test_select_org) == 0
+    )
+    error_message = "Every usage group set should have been destroyed"
+  }
+}
