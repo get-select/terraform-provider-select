@@ -171,7 +171,7 @@ resource "select_usage_group" "team_groups" {
 ### Required
 
 - `filter_expression_json` (String) A JSON-encoded filter choosing which spend is attributed to this group. The root must be a group — `{"operator": "and"|"or", "filters": [...]}` — rather than a single leaf filter. Which fields a filter can name depends on the set's scope; see "Filter Expressions" below.
-- `name` (String) The group's display name. Must be unique within its set.
+- `name` (String) The group's display name. The API does not require this to be unique; two groups in the same set may share a name.
 - `order` (Number) Both the display order and the cost allocation precedence within the set. Where two groups' filters overlap, spend is attributed to the one with the lower order. Prefer unique values within a set.
 - `usage_group_set_id` (String) The set this group belongs to. Changing it forces a new group, since the API does not move a group between sets.
 
@@ -184,7 +184,7 @@ resource "select_usage_group" "team_groups" {
 - `create_time` (String) When the group was created — RFC 3339 UTC.
 - `etag` (String) Opaque strong ETag for this group. Sent as `If-Match` on updates and deletes so a change made outside Terraform cannot be silently overwritten.
 - `id` (String) The group's identifier in SELECT, assigned when it is created. Use it with `terraform import` — as `usage_group_set_id/id` — to bring an existing group under management.
-- `update_time` (String) When the group was last changed — RFC 3339 UTC.
+- `update_time` (String) RFC 3339 UTC. SELECT does not currently advance this when the group's fields change, so compare etag to detect a change.
 
 ### Filter Expressions
 

@@ -7,10 +7,11 @@ variables {
   # and must correlate to an APIKey in the Db of whatever instance you're testing against
   # TF_VAR_select_api_key
   # TF_VAR_select_organization_id
-  test_team_id          = "2f0899e2-2746-4300-887c-524e64b5a138"
-  usage_group_set_name  = "terraform-test-set"
+  # test_team_id, usage_group_set_name and usage_group_name all default in
+  # tests/main.tf and are overridable with TF_VAR_test_team_id,
+  # TF_VAR_usage_group_set_name and TF_VAR_usage_group_name; a file-level
+  # default here would outrank those environment variables.
   usage_group_set_order = 1
-  usage_group_name      = "terraform-test-group"
   usage_group_order     = 1
   usage_group_budget    = 100.0
 }
@@ -181,12 +182,12 @@ run "update_usage_group_set" {
   command = apply
 
   variables {
-    usage_group_set_name  = "terraform-test-set-updated"
-    usage_group_set_order = 5
+    usage_group_set_name_suffix = "-updated"
+    usage_group_set_order       = 5
   }
 
   assert {
-    condition     = select_usage_group_set.test_org[0].name == "terraform-test-set-updated"
+    condition     = select_usage_group_set.test_org[0].name == "${var.usage_group_set_name}-updated"
     error_message = "Usage group set name should be updated"
   }
 
@@ -207,13 +208,13 @@ run "update_usage_group" {
   command = apply
 
   variables {
-    usage_group_name   = "terraform-test-group-updated"
-    usage_group_order  = 3
-    usage_group_budget = 50.0
+    usage_group_name_suffix = "-updated"
+    usage_group_order       = 3
+    usage_group_budget      = 50.0
   }
 
   assert {
-    condition     = select_usage_group.test_basic[0].name == "terraform-test-group-updated"
+    condition     = select_usage_group.test_basic[0].name == "${var.usage_group_name}-updated"
     error_message = "Usage group name should be updated"
   }
 
@@ -295,9 +296,9 @@ run "clear_usage_group_budget" {
   command = apply
 
   variables {
-    usage_group_name   = "terraform-test-group-updated"
-    usage_group_order  = 3
-    usage_group_budget = null
+    usage_group_name_suffix = "-updated"
+    usage_group_order       = 3
+    usage_group_budget      = null
   }
 
   assert {

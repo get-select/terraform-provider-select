@@ -41,11 +41,22 @@ variable "enable_usage_group_tests" {
   default     = true
 }
 
-# Test-specific variables with defaults
+# Test-specific variables with defaults. Overridable with TF_VAR_usage_group_set_name;
+# a file-level default in provider.tftest.hcl would outrank that environment
+# variable, which is why the tftest file no longer sets one.
 variable "usage_group_set_name" {
-  description = "Name for the usage group set"
+  description = "Name for the usage group set. Overridable with TF_VAR_usage_group_set_name."
   type        = string
-  default     = "test-usage-group-set"
+  default     = "terraform-test-set"
+}
+
+# The rename run block needs a second name. A run block cannot build one —
+# Terraform does not expose var.* inside a run's variables block — so the
+# suffix is its own variable and the name is composed below.
+variable "usage_group_set_name_suffix" {
+  description = "Appended to the usage group set name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
 }
 
 variable "usage_group_set_order" {
@@ -55,15 +66,24 @@ variable "usage_group_set_order" {
 }
 
 variable "test_team_id" {
-  description = "Test team UUID"
+  description = "Test team UUID. Overridable with TF_VAR_test_team_id for a different organization."
   type        = string
   default     = "2f0899e2-2746-4300-887c-524e64b5a138"
 }
 
 variable "usage_group_name" {
-  description = "Name for the usage group"
+  description = "Name for the usage group. Overridable with TF_VAR_usage_group_name."
   type        = string
-  default     = "test-usage-group"
+  default     = "terraform-test-group"
+}
+
+# The rename run block needs a second name. A run block cannot build one —
+# Terraform does not expose var.* inside a run's variables block — so the
+# suffix is its own variable and the name is composed below.
+variable "usage_group_name_suffix" {
+  description = "Appended to the usage group name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
 }
 
 variable "usage_group_order" {
@@ -394,16 +414,17 @@ provider "select" {
 # resource here regardless of which file asked for it. A connection suite's API
 # key is scoped only to its own resource type, so an ungated usage group set
 # 403s on "Insufficient scope"; even a fully-scoped key would then hit
-# test_team's hardcoded team_id, which exists in whatever org this was
-# originally built against but not in a fresh one. Neither is a real dependency
-# these suites have, so enable_usage_group_tests just turns them off instead of
-# working around it.
+# test_team's team_id, which defaults to a team in whatever org this was
+# originally built against but not in a fresh one — override it with
+# TF_VAR_test_team_id for a different organization. Neither is a real
+# dependency these suites have, so enable_usage_group_tests just turns them off
+# instead of working around it.
 
 # Usage group set with SELECT organization scope
 resource "select_usage_group_set" "test_org" {
   count = var.enable_usage_group_tests ? 1 : 0
 
-  name  = var.usage_group_set_name
+  name  = "${var.usage_group_set_name}${var.usage_group_set_name_suffix}"
   order = var.usage_group_set_order
 }
 
@@ -429,7 +450,7 @@ resource "select_usage_group_set" "test_select_org" {
 resource "select_usage_group" "test_basic" {
   count = var.enable_usage_group_tests ? 1 : 0
 
-  name                   = var.usage_group_name
+  name                   = "${var.usage_group_name}${var.usage_group_name_suffix}"
   order                  = var.usage_group_order
   budget                 = var.usage_group_budget
   usage_group_set_id     = select_usage_group_set.test_org[0].id

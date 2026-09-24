@@ -9,10 +9,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 type HTTPClient struct {
@@ -33,7 +36,14 @@ func NewHTTPClient(apiKey, organizationId, baseURL string) *HTTPClient {
 			},
 			Timeout: 90 * time.Second,
 		},
-		baseURL:        baseURL,
+		// A trailing slash would double up with an endpoint's own leading slash
+		// and build a path such as "//v2/usage-group-sets". The API answers a
+		// doubled slash with a plain 404, which Read cannot tell apart from the
+		// resource itself being gone, so it is trimmed here rather than left to
+		// surface that way. Provider.Configure rejects a select_api_url that is
+		// broken in other ways; this trim also covers a caller that builds a
+		// client directly.
+		baseURL:        strings.TrimRight(baseURL, "/"),
 		apiKey:         apiKey,
 		organizationId: organizationId,
 	}
@@ -62,10 +72,35 @@ func (c *HTTPClient) makeRequest(ctx context.Context, method, endpoint string, b
 	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
+
+	// The method, path and ETag are the shape of every v2 write and are not
+	// secret; the API key and the rest of the headers are never logged. This is
+	// the only place that logs a request, so it is also where the 412-retry
+	// sequence in v2Resource.write becomes visible: the failed PATCH, the
+	// refetch, and the retry each pass through here as their own call.
+	ifMatch, ifMatchSent := headers["If-Match"]
+	tflog.Debug(ctx, "SELECT API request", map[string]interface{}{
+		"method":        method,
+		"path":          endpoint,
+		"if_match_sent": ifMatchSent,
+		"if_match":      ifMatch,
+	})
+
 	resp, err := c.client.Do(req)
 	if err != nil {
+		tflog.Debug(ctx, "SELECT API request failed", map[string]interface{}{
+			"method": method,
+			"path":   endpoint,
+			"error":  err.Error(),
+		})
 		return nil, err
 	}
+
+	tflog.Debug(ctx, "SELECT API response", map[string]interface{}{
+		"method": method,
+		"path":   endpoint,
+		"status": resp.StatusCode,
+	})
 
 	return resp, nil
 }
@@ -108,8 +143,11 @@ func normalizeJSON(jsonStr string) (string, error) {
 // setVersion tracks one usage group set's version for the current apply. See
 // APIClient.EnsureVersion.
 type setVersion struct {
-	once     sync.Once
-	recorded bool
+	once sync.Once
+	// recorded is atomic because VersionRecorded reads it without going
+	// through once: the set resource asks about a version a concurrent group
+	// write may be recording at that moment.
+	recorded atomic.Bool
 	diags    diag.Diagnostics
 }
 
@@ -274,6 +312,11 @@ func (c *APIClient) doRequest(ctx context.Context, method, endpoint string, requ
 // Concurrent callers for the same set block until the first finishes; callers
 // for different sets do not contend. Terraform applies at a default parallelism
 // of 10, so several groups in the same set reach this at once.
+//
+// A 404 here — the set is gone, out of band from this apply — is not reported
+// as a failure: there is nothing left to check-point, and the write that
+// follows will get its own 404 from the set's item endpoint. Every other
+// status, including a 403 on scopes, still fails the apply.
 func (c *APIClient) EnsureVersion(ctx context.Context, usageGroupSetId string) diag.Diagnostics {
 	c.versionsMu.Lock()
 	if c.versions == nil {
@@ -299,12 +342,36 @@ func (c *APIClient) EnsureVersion(ctx context.Context, usageGroupSetId string) d
 			return
 		}
 		if apiErr != nil {
+			// A set that is already gone has nothing to check-point. The write
+			// this call is preparing will get its own 404 from the same set's
+			// item endpoint and be handled there — Delete already treats that
+			// as success, and Create/Update's own 404 handling is unchanged by
+			// this. version.recorded stays false: nothing was actually
+			// recorded, so a later write to this set that comes back 412 is
+			// real drift, not this call's doing, and must still reach the
+			// user through the normal 412 diagnostic.
+			//
+			// A 404 from the version route alone does not prove that: a server
+			// without that route answers the same way, and tolerating it there
+			// would let every write go ahead with no checkpoint. So the set's
+			// item endpoint is asked too, and only its 404 counts.
+			if apiErr.StatusCode == http.StatusNotFound {
+				setErr, setDiags := c.doRequest(ctx, http.MethodGet,
+					usageGroupSetEndpoint(usageGroupSetId), nil, nil, requestOptions{})
+				if setDiags.HasError() {
+					version.diags = setDiags
+					return
+				}
+				if setErr != nil && setErr.StatusCode == http.StatusNotFound {
+					return
+				}
+			}
 			version.diags = diag.Diagnostics{
 				usageGroupSetErrors.diagnostic("record a version of the usage group set", apiErr, nil),
 			}
 			return
 		}
-		version.recorded = true
+		version.recorded.Store(true)
 	})
 
 	return version.diags
@@ -323,5 +390,5 @@ func (c *APIClient) VersionRecorded(usageGroupSetId string) bool {
 	defer c.versionsMu.Unlock()
 
 	version, started := c.versions[usageGroupSetId]
-	return started && version.recorded
+	return started && version.recorded.Load()
 }

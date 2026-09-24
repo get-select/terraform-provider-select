@@ -25,7 +25,6 @@ var databricksConnectionErrors = v2ErrorFormat{
 	Noun:       "Databricks Connection",
 	Subject:    "the connection",
 	Object:     "the Databricks connection",
-	Plural:     "Databricks connections",
 	ReadScope:  "databricks_connections:read",
 	WriteScope: "databricks_connections:write",
 }

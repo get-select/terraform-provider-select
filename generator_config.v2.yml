@@ -234,7 +234,10 @@ resources:
               The set's identifier in SELECT, assigned when it is created. Use it with
               `terraform import` to bring an existing set under management.
           name:
-            description: The set's display name.
+            description: >-
+              The set's display name. Must be unique within the organization; the API
+              compares names ignoring case and surrounding whitespace, so "Engineering"
+              and "  engineering  " conflict.
           order:
             description: >-
               Where the set sorts among the organization's other sets. Lower sorts first.
@@ -294,7 +297,9 @@ resources:
               The set this group belongs to. Changing it forces a new group, since the
               API does not move a group between sets.
           name:
-            description: The group's display name. Must be unique within its set.
+            description: >-
+              The group's display name. The API does not require this to be unique;
+              two groups in the same set may share a name.
           filter_expression_json:
             description: >-
               A JSON-encoded filter choosing which spend is attributed to this group.
@@ -316,4 +321,6 @@ resources:
           create_time:
             description: When the group was created — RFC 3339 UTC.
           update_time:
-            description: When the group was last changed — RFC 3339 UTC.
+            description: >-
+              RFC 3339 UTC. SELECT does not currently advance this when the
+              group's fields change, so compare etag to detect a change.

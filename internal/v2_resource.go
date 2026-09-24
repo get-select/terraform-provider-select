@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 // v2Identity is what a write needs from a v2 resource's prior state: the
@@ -173,6 +174,15 @@ func (r *v2Resource[TModel, TResponse]) write(ctx context.Context, method string
 		return apiErr, diags
 	}
 
+	// This 412 is one EnsureVersion caused earlier in the same apply, not a
+	// change the user needs to hear about. Naming that here, next to the
+	// refetch and the retry it triggers, is what makes the sequence legible in
+	// a trace log — each of those three requests logs itself in makeRequest.
+	tflog.Debug(ctx, "self-inflicted 412, refetching ETag and retrying write", map[string]interface{}{
+		"method": method,
+		"path":   r.itemEndpoint(state),
+	})
+
 	fresh, freshDiags := r.freshEtag(ctx, state)
 	if freshDiags.HasError() {
 		return apiErr, freshDiags
@@ -255,6 +265,7 @@ func (r *v2Resource[TModel, TResponse]) Read(ctx context.Context, req resource.R
 		// Gone, or no longer visible to this API key. Either way Terraform
 		// should plan to recreate it rather than keep stale values.
 		if apiErr.StatusCode == http.StatusNotFound {
+			tflog.Debug(ctx, "SELECT resource not found, removing from state", map[string]interface{}{"path": r.itemEndpoint(&state)})
 			resp.State.RemoveResource(ctx)
 			return
 		}

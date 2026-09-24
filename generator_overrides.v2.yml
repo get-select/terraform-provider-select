@@ -375,6 +375,16 @@ resources:
       filter_expression_json:
         computed_optional_required: required
 
+      # budget is the one field on this resource the API lets a caller clear.
+      # The generator makes it optional+computed because it appears in both the
+      # request and the response, but optional+computed means a null in the
+      # configuration keeps whatever state already holds — so removing budget
+      # from a configuration would leave the group's old budget in place instead
+      # of clearing it. Plain optional is what makes a removal reach the API as
+      # the null that clears it.
+      budget:
+        computed_optional_required: optional
+
       # SELECT assigns these once, when the group is created, and never changes
       # them. Holding them from state keeps them out of the "known after apply"
       # list on every unrelated update.

@@ -97,9 +97,6 @@ type v2ErrorFormat struct {
 	// Object is how an operation string names it: "the AWS connection", used to
 	// build phrases like "add the AWS connection".
 	Object string
-	// Plural describes what an API key is being asked to manage: "Snowflake
-	// accounts".
-	Plural string
 	// ReadScope and WriteScope are the API key scopes the resource needs.
 	ReadScope, WriteScope string
 }
@@ -126,14 +123,45 @@ func (f v2ErrorFormat) preconditionRequired(operation string, apiErr *apiError) 
 	)
 }
 
-// forbidden explains a 403 by naming the scopes the API key is missing.
+// forbidden explains a 403. The API answers every 403 with the same "forbidden"
+// code whether the cause is a missing scope on the API key or something else —
+// for instance, a team_id naming a team outside the caller's organization gets
+// the identical code — so this leads with the API's own detail, which is the
+// only part of the response that actually says what went wrong, and names the
+// scopes as one possible cause rather than the diagnosis.
 func (f v2ErrorFormat) forbidden(operation string, apiErr *apiError) diag.Diagnostic {
 	return diag.NewErrorDiagnostic(
-		"Insufficient API Key Scopes",
-		fmt.Sprintf("SELECT could not %s. Managing %s needs an API key with the "+
-			"%s and %s scopes.\n\n%s",
-			operation, f.Plural, f.ReadScope, f.WriteScope, apiErr.Detail),
+		f.Noun+" Forbidden",
+		fmt.Sprintf("SELECT could not %s: %s\n\n"+
+			"This can also happen when the API key is missing the %s or %s scope; "+
+			"the detail above names the actual cause when SELECT knows it.",
+			operation, apiErr.Detail, f.ReadScope, f.WriteScope),
 	)
+}
+
+// conflict is the fallback for a 409 with no resource-specific opinion. On its
+// own, "already exists" or "already in use" says that something clashed, not
+// what — so this names the field the problem document's details array points
+// at, when the API sent one. It falls back to unexpected when the API sent no
+// details, rather than guessing.
+func (f v2ErrorFormat) conflict(operation string, apiErr *apiError) diag.Diagnostic {
+	field := bodyField(apiErr.field())
+	if field == "" {
+		return f.unexpected(operation, apiErr)
+	}
+	return diag.NewErrorDiagnostic(
+		f.Noun+" Conflict",
+		fmt.Sprintf("SELECT could not %s: %s\n\nThe conflict is on the %q field.",
+			operation, apiErr.Detail, field),
+	)
+}
+
+// bodyField strips the API's "body." prefix from a problem detail's field
+// name. The v2 API names a request body field this way in its `details` array;
+// the plain name left after stripping it is what a caller sent as a Terraform
+// attribute, so it reads as an answer rather than an implementation detail.
+func bodyField(field string) string {
+	return strings.TrimPrefix(field, "body.")
 }
 
 // unexpected is the fallback for a status with no specific advice, quoting the
@@ -173,6 +201,8 @@ func (f v2ErrorFormat) diagnostic(operation string, apiErr *apiError, specific v
 		return f.preconditionRequired(operation, apiErr)
 	case http.StatusForbidden:
 		return f.forbidden(operation, apiErr)
+	case http.StatusConflict:
+		return f.conflict(operation, apiErr)
 	default:
 		return f.unexpected(operation, apiErr)
 	}

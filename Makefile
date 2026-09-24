@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 # The provider is generated from the v2 API's OpenAPI document. specpatch fills
 # in what tfplugingen-openapi cannot produce — dropped descriptions, sensitive
 # attributes, plan modifiers. See tools/specpatch.
@@ -159,6 +159,12 @@ test-budget:
 	@echo "Running budget tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=budget.tftest.hcl
 
+# Alias for the e2e workflow, whose matrix runs `make test-${{ matrix.platform }}`
+# for every leg. The usage group suite already runs as part of test-all
+# (provider.tftest.hcl), so this just gives it a matching name rather than
+# splitting it into its own filtered target.
+test-usage-group: test-all
+
 # Remove connections and budgets a failed run left attached to the organization.
 # `terraform test` tears down what it can, but a run killed mid-apply — or one
 # whose destroy the API refused — leaves a resource behind. A leaked connection
@@ -227,6 +233,7 @@ help:
 	@echo "  test-validate    - Validate test configuration syntax"
 	@echo "  test-go          - Run Go unit tests (no API access needed)"
 	@echo "  test-all         - Run the Terraform provider tests"
+	@echo "  test-usage-group - Alias for test-all, named for the e2e workflow's matrix"
 	@echo "  test             - Run test-go and test-all"
 	@echo "  test-snowflake   - Run Snowflake account tests (needs real Snowflake credentials)"
 	@echo "  test-databricks  - Run Databricks connection tests (needs real Databricks credentials)"

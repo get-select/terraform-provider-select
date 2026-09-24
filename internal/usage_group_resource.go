@@ -43,6 +43,23 @@ func NewUsageGroupResource() resource.Resource {
 // changes any of them. Every write to a group runs it; only the first for a
 // given set does any work. See APIClient.EnsureVersion for why this has to
 // happen inside a write rather than once at the start of the apply.
+//
+// This runs before Create's request is sent, so a create the API goes on to
+// reject with a 422 still burns a version — confirmed against the local API
+// that POST .../versions is not idempotent (two calls with nothing changed in
+// between still produce two distinct version records) and that there is no
+// DELETE on a version to undo one after the fact. Moving the version after
+// the create would not help: the version's content is a server-side snapshot
+// taken when the POST lands, not something this provider sends, so recording
+// it after a successful create would check-point the set including the group
+// that create just added rather than the pre-apply state EnsureVersion exists
+// to preserve. Catching the 422 here ahead of time would mean reimplementing
+// the API's own filter validation client-side, which validateUsageGroupConfig
+// deliberately does not do (see its docstring). Every other cost of a version
+// already runs before this call: createPayload and ValidateConfig, both of
+// which report a locally-detectable problem before EnsureVersion is reached.
+// A configuration with a persistent mistake still burns a version per retry;
+// there is no fix available on the client side of this API.
 func recordUsageGroupSetVersion(ctx context.Context, client *APIClient, model *resource_usage_group.UsageGroupModel) diag.Diagnostics {
 	return client.EnsureVersion(ctx, model.UsageGroupSetId.ValueString())
 }

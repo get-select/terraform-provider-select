@@ -20,7 +20,7 @@ resource "select_usage_group_set" "production" {
 
 ### Required
 
-- `name` (String) The set's display name.
+- `name` (String) The set's display name. Must be unique within the organization; the API compares names ignoring case and surrounding whitespace, so "Engineering" and "  engineering  " conflict.
 - `order` (Number) Where the set sorts among the organization's other sets. Lower sorts first.
 
 ### Optional

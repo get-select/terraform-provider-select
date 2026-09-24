@@ -33,7 +33,6 @@ var usageGroupSetErrors = v2ErrorFormat{
 	Noun:       "Usage Group Set",
 	Subject:    "the usage group set",
 	Object:     "the usage group set",
-	Plural:     "usage group sets",
 	ReadScope:  "usage_groups:read",
 	WriteScope: "usage_groups:write",
 }

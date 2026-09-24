@@ -33,7 +33,7 @@ func probeResource(url string, selfInflicted bool) *v2Resource[probeModel, probe
 		client: NewAPIClient("key", "org", url),
 		errors: v2ErrorFormat{
 			Noun: "Probe", Subject: "the probe", Object: "the probe",
-			Plural: "probes", ReadScope: "probes:read", WriteScope: "probes:write",
+			ReadScope: "probes:read", WriteScope: "probes:write",
 		},
 		itemEndpoint: func(m *probeModel) string { return "/v2/probes/" + m.Id.ValueString() },
 		identity: func(m *probeModel) v2Identity {

@@ -255,6 +255,31 @@ func TestEnsureVersionIsSafeUnderConcurrency(t *testing.T) {
 	}
 }
 
+// The set resource asks VersionRecorded while a group write in the same apply
+// may still be recording that version. Run with -race.
+func TestVersionRecordedIsSafeDuringEnsureVersion(t *testing.T) {
+	server := newVersionServer(t)
+	client := server.client()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_ = client.EnsureVersion(context.Background(), "ugs-1")
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 100; i++ {
+			_ = client.VersionRecorded("ugs-1")
+		}
+	}()
+	wg.Wait()
+
+	if !client.VersionRecorded("ugs-1") {
+		t.Error("VersionRecorded should report true once EnsureVersion has returned")
+	}
+}
+
 // A write only treats a 412 as self-inflicted for a set this apply actually
 // recorded a version of; anywhere else a precondition failure is real drift and
 // has to reach the user.
@@ -313,6 +338,107 @@ func TestEnsureVersionReportsAFailureAndDoesNotRetry(t *testing.T) {
 	}
 }
 
+// A set that was removed out of band has nothing left to check-point. The
+// write EnsureVersion is preparing gets its own 404 from the set's item
+// endpoint, so a delete of a group whose set is also gone must succeed rather
+// than fail here first.
+func TestEnsureVersionToleratesA404AndDoesNotRetry(t *testing.T) {
+	var posts int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			posts++
+		}
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Usage group set 'ugs-1' was not found.","code":"not_found"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient("key", "org", server.URL)
+	ctx := context.Background()
+
+	if diags := client.EnsureVersion(ctx, "ugs-1"); diags.HasError() {
+		t.Fatalf("a 404 has nothing to check-point and must not fail the write: %v", diags)
+	}
+
+	// A second write in the same apply gets the same tolerant answer without
+	// asking again — the sync.Once already ran.
+	if diags := client.EnsureVersion(ctx, "ugs-1"); diags.HasError() {
+		t.Errorf("a 404 result should not become sticky: %v", diags)
+	}
+	if posts != 1 {
+		t.Errorf("a 404 should not be retried within an apply, posted %d times", posts)
+	}
+}
+
+// VersionRecorded gates the self-inflicted-412 retry. A 404 means nothing was
+// actually recorded, so a later 412 on this set must still reach the user as
+// real drift rather than being retried as this provider's own doing.
+func TestEnsureVersionA404DoesNotCountAsRecorded(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Usage group set 'ugs-1' was not found.","code":"not_found"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient("key", "org", server.URL)
+
+	if diags := client.EnsureVersion(context.Background(), "ugs-1"); diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if client.VersionRecorded("ugs-1") {
+		t.Error("a set that answered 404 has no recorded version and must not be reported as recorded")
+	}
+}
+
+// A 404 from the version route alone does not prove the set is gone: a server
+// without that route answers the same way. If the set itself still answers, the
+// write must stop rather than go ahead with no checkpoint.
+func TestEnsureVersionFailsWhenOnlyTheVersionRouteIs404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == usageGroupSetEndpoint("ugs-1") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"ugs-1"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"detail":"Not Found","code":"not_found"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient("key", "org", server.URL)
+
+	if diags := client.EnsureVersion(context.Background(), "ugs-1"); !diags.HasError() {
+		t.Fatal("a set that still exists must not have its missing checkpoint tolerated")
+	}
+	if client.VersionRecorded("ugs-1") {
+		t.Error("a version that failed to record should not count as recorded")
+	}
+}
+
+// A failure that is not a 404 — a 403 on scopes, a 500 — must still fail the
+// apply the same way for every caller, 404-tolerance notwithstanding.
+func TestEnsureVersionStillFailsOnNonNotFoundErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"detail":"Something went wrong.","code":"internal_error"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient("key", "org", server.URL)
+
+	diags := client.EnsureVersion(context.Background(), "ugs-1")
+	if !diags.HasError() {
+		t.Fatal("a 500 is not a case for 404-tolerance and should still fail the write")
+	}
+	if client.VersionRecorded("ugs-1") {
+		t.Error("a version that failed to record should not count as recorded")
+	}
+}
+
 func TestUsageGroupSetEndpoints(t *testing.T) {
 	if got := usageGroupSetEndpoint("ugs-1"); got != "/v2/usage-group-sets/ugs-1" {
 		t.Errorf("item endpoint = %s", got)
@@ -333,5 +459,58 @@ func TestUsageGroupSetPreconditionAndScopeDiagnostics(t *testing.T) {
 		newAPIError(403, `{"detail":"This caller lacks the usage_groups:write scope.","code":"forbidden"}`), nil)
 	if !strings.Contains(forbidden.Detail(), "usage_groups:write") {
 		t.Errorf("a scope failure should name the scopes needed, got: %s", forbidden.Detail())
+	}
+}
+
+// The API answers every 403 with the same "forbidden" code, whether the cause
+// is a missing scope or something unrelated to scopes at all — such as a
+// team_id naming a team outside the caller's organization. The diagnostic must
+// not assert a scope problem it cannot tell apart from any other 403; it should
+// lead with the API's own detail and offer scopes only as a possibility.
+func TestUsageGroupSetForbiddenDoesNotAssertAScopeCause(t *testing.T) {
+	teamAccess := usageGroupSetErrors.diagnostic("add the usage group set",
+		newAPIError(403, `{"detail":"This organization does not have access to team 2f0899e2-2746-4300-887c-524e64b5a138.","code":"forbidden"}`), nil)
+
+	if !strings.Contains(teamAccess.Detail(), "does not have access to team") {
+		t.Errorf("the diagnostic should quote the API's actual explanation, got: %s", teamAccess.Detail())
+	}
+	if teamAccess.Summary() == "Insufficient API Key Scopes" {
+		t.Error("the summary should not name scopes as the cause when the API's detail says otherwise")
+	}
+}
+
+// A 409 on its own says something clashed, not what. The problem document's
+// details array names the offending field, and the diagnostic should surface
+// it rather than dropping it the way the plain unexpected fallback did.
+func TestUsageGroupSetConflictNamesTheOffendingField(t *testing.T) {
+	dup := usageGroupSetErrors.diagnostic("add the usage group set",
+		newAPIError(409, `{"detail":"A usage group set named 'Engineering' already exists.","code":"conflict","details":[{"field":"body.name"}]}`), nil)
+
+	// Assert on wording only the conflict renderer produces. The API's own
+	// detail already contains "name" and "already exists", so matching those
+	// would pass against the generic fallback too.
+	if dup.Summary() != "Usage Group Set Conflict" {
+		t.Errorf("a 409 carrying a field should use the conflict wording, got summary: %s", dup.Summary())
+	}
+	if !strings.Contains(dup.Detail(), `conflict is on the "name" field`) {
+		t.Errorf("the diagnostic should name the conflicting field, got: %s", dup.Detail())
+	}
+	if !strings.Contains(dup.Detail(), "already exists") {
+		t.Errorf("the diagnostic should still quote the API's detail, got: %s", dup.Detail())
+	}
+}
+
+// A 409 with no details array has nothing to name, so the diagnostic should
+// fall back to the plain unexpected wording rather than claiming a field it was
+// never told about.
+func TestUsageGroupSetConflictWithNoDetailsFallsBackToUnexpected(t *testing.T) {
+	dup := usageGroupSetErrors.diagnostic("add the usage group set",
+		newAPIError(409, `{"detail":"A usage group set named 'Engineering' already exists.","code":"conflict"}`), nil)
+
+	if dup.Summary() != "Usage Group Set API Error" {
+		t.Errorf("a conflict with no details should fall back to the generic fallback, got summary: %s", dup.Summary())
+	}
+	if strings.Contains(dup.Detail(), "conflict is on the") {
+		t.Errorf("the diagnostic should not claim a field it was never told about, got: %s", dup.Detail())
 	}
 }
