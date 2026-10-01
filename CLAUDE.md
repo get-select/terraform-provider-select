@@ -12,7 +12,7 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 
 ### Essential Commands
 - `make reset` - Full regeneration: clean, fetch OpenAPI specs, generate code, build, and install
-- `make codegen` - Download both OpenAPI specs (`https://api.select.dev/public_openapi` and `https://api.select.dev/v2/openapi.json`) and generate provider code
+- `make codegen` - Download the OpenAPI spec (`https://api.select.dev/v2/openapi.json`) and generate provider code
 - `make codegen-go` - Generate from specs already on disk, skipping the download
 - `make build` - Build the provider binary
 - `make install` - Install provider locally (includes build)
@@ -49,12 +49,14 @@ See `tests/README.md` for the full list and for how CI supplies them.
 
 ### Code Generation Pipeline
 
-The provider is generated from **two** OpenAPI documents. SELECT's v2 API is a separate FastAPI application mounted at `/v2` with its own document, so each version has its own generator config and its own code spec; `tfplugingen-framework` adds packages rather than replacing its output directory, so the two runs coexist.
+Every resource is generated from SELECT's v2 API document.
 
-1. **Fetch OpenAPI Specs**: `curl https://api.select.dev/public_openapi` and `curl https://api.select.dev/v2/openapi.json`
-2. **Generate Schema**: `tfplugingen-openapi` converts each spec → Terraform schema (`internal/provider/provider_code_spec.json` and `provider_code_spec.v2.json`)
-3. **Patch Schema (v2 only)**: `go run ./tools/specpatch` fills in what `tfplugingen-openapi` cannot produce — see below
+1. **Fetch OpenAPI Spec**: `curl https://api.select.dev/v2/openapi.json`
+2. **Generate Schema**: `tfplugingen-openapi` converts it → Terraform schema (`internal/provider/provider_code_spec.v2.json`)
+3. **Patch Schema**: `go run ./tools/specpatch` fills in what `tfplugingen-openapi` cannot produce — see below
 4. **Generate Code**: `tfplugingen-framework` creates final Go code in `internal/provider/`
+
+The legacy v1 public API is gone. Usage groups were its last consumer; they moved to v2 in AUT-15, taking `generator_config.yml`, the `openapi.public.json` fetch and the second codegen pass with them.
 
 **Important**: The `internal/provider/` directory is git-ignored and regenerated on every `make codegen` run.
 
@@ -62,7 +64,7 @@ The provider is generated from **two** OpenAPI documents. SELECT's v2 API is a s
 
 Two limitations shape everything about the generator configs, and are easy to trip over:
 
-- **An attribute override only supports `description`.** The upstream `Override` struct has a single `Description` field, and the config is parsed with a plain `yaml.Unmarshal`, so any other key is dropped silently. `computed_optional_required` entries in `generator_config.yml` are therefore no-ops. There is no config path to `sensitive`, defaults, or plan modifiers.
+- **An attribute override only supports `description`.** The upstream `Override` struct has a single `Description` field, and the config is parsed with a plain `yaml.Unmarshal`, so any other key is dropped silently. A `computed_optional_required` entry in `generator_config.v2.yml` is therefore a no-op — it belongs in `generator_overrides.v2.yml`. There is no config path to `sensitive`, defaults, or plan modifiers.
 - **A nullable property loses its description.** `anyOf: [T, null]` maps correctly to `T`, but the description on the outer schema is dropped. Most of the v2 API's properties are written this way.
 
 `tools/specpatch` closes both gaps by patching the generated code spec before `tfplugingen-framework` runs. It restores descriptions from the OpenAPI schemas named in `generator_overrides.v2.yml`, marks every attribute whose property carries `x-terraform-sensitive`, and applies per-attribute plan modifiers. It fails the build if a write-only property is not marked sensitive, or if an override matches no generated attribute.
@@ -116,16 +118,17 @@ The `api.go` file provides:
 - **HTTPClient**: Handles HTTP communication with connection pooling (12 concurrent connections)
 - **APIClient**: Higher-level JSON request/response handling with diagnostics
 - **Type Conversion**: Bidirectional conversion between Terraform framework types (`types.String`, etc.) and Go primitives for JSON marshaling
-- **Version Management**: `GetOrCreateVersion()` ensures all resources in a single apply share the same version (SELECT API requirement)
+- **Version Management**: `EnsureVersion()` records one version per usage group set per apply, before that apply changes any of the set's groups
 
 Key functions:
-- `convertTerraformToAPI()` - Converts Terraform types to JSON-serializable Go types
-- `updateTerraformFromAPI()` - Updates Terraform model from API response
-- `doJSONRequest()` - Handles all HTTP+JSON interaction with proper error handling
+- `doRequest()` - Handles all HTTP+JSON interaction, returning the API's status as an `*apiError` so a caller can branch on it
+- `EnsureVersion()` / `VersionRecorded()` - Usage group set versioning, once per set per apply
+
+Request and response bodies are plain Go structs built by each resource's own `build*`/`apply*` functions in `internal/*_api.go`. The reflection layer that converted Terraform framework types in and out of JSON went with the v1 resources that needed it.
 
 ## Configuration
 
-### generator_config.yml
+### generator_config.v2.yml
 
 Controls code generation behavior:
 - **Resource mappings**: Maps API endpoints to Terraform resources
@@ -143,29 +146,32 @@ resources:
       attributes:
         overrides:
           name:
-            computed_optional_required: 'required'
+            description: The group's display name. Must be unique within its set.
 ```
+
+Anything beyond a description — `computed_optional_required`, `requires_replace`, `use_state_for_unknown` — goes in `generator_overrides.v2.yml`, which `specpatch` applies. Note that `requires_replace` and `use_state_for_unknown` are matched against the literal `true`; any other value is silently ignored.
 
 ## Workflow Patterns
 
 ### Making Changes to Resources
 
-1. **If changing resource behavior**: Modify `generator_config.yml` (v1) or `generator_config.v2.yml` / `generator_overrides.v2.yml` (v2), then run `make reset`
+1. **If changing resource behavior**: Modify `generator_config.v2.yml` / `generator_overrides.v2.yml`, then run `make reset`
 2. **If modifying API interaction**: Edit `internal/*_resource.go` or `internal/api.go`, then run `make build install`
 3. **Never edit files in `internal/provider/`** - they are regenerated and git-ignored
 
 ### Adding a New Resource
 
-1. Update `generator_config.yml` with new resource configuration (paths, methods, schema)
+1. Update `generator_config.v2.yml` with new resource configuration (paths, methods, schema), and `generator_overrides.v2.yml` with anything beyond descriptions
 2. Run `make reset` to generate types
-3. Create `internal/new_resource_resource.go` with CRUD implementation
-4. Register in `internal/provider.go`'s `Resources()` method
-5. Add tests in `tests/`
+3. Create `internal/new_resource_api.go` with payload/response structs and their builders
+4. Create `internal/new_resource_resource.go`, populating a `v2Resource` — see `usage_group_resource.go` for a resource nested under a parent, and `budget_resource.go` for one needing hand-written schema
+5. Register in `internal/provider.go`'s `Resources()` method
+6. Add tests in `internal/` (unit) and `tests/` (acceptance)
 
 ### Debugging Provider Issues
 
 When the provider fails:
-1. Check if OpenAPI spec fetch is working: `curl -s https://api.select.dev/public_openapi`
+1. Check if OpenAPI spec fetch is working: `curl -s https://api.select.dev/v2/openapi.json`
 2. Verify dev overrides: `cat ~/.terraform.d/.terraformrc`
 3. Rebuild completely: `make clean && make reset`
 4. Check API client behavior in `internal/api.go` - all HTTP communication goes through `doJSONRequest()`
@@ -174,7 +180,14 @@ When the provider fails:
 
 ### Version Management
 
-The SELECT API requires that all changes to usage groups within a usage group set in a single Terraform apply must share the same version ID. The `APIClient.GetOrCreateVersion()` method handles this using `sync.Once` to ensure version creation happens exactly once per apply operation.
+A usage group set version is a frozen copy of the set's groups. The newest one holds the live groups; the rest are restorable checkpoints. Usage group writes change the newest version in place and never add one, so without intervention an apply would overwrite what the previous apply left behind with nothing kept.
+
+`APIClient.EnsureVersion()` records a version through `POST /v2/usage-group-sets/{id}/versions` before an apply's first change to a given set's groups, so each apply leaves exactly one checkpoint of the state it started from. Terraform gives a provider no apply-level hook, so this has to happen inside the first write that needs it; the `APIClient` lives for one apply, so per-set state on it is per-apply state.
+
+Two details are easy to get wrong:
+
+- **Versions are tracked per set, not per client.** An apply touching several sets records one version for each. The v1 implementation held a single `sync.Once` on the client, so only the first set ever got one.
+- **Recording a version rotates the set's ETag.** A later write in the same apply then carries an ETag this provider itself invalidated, which the API answers with a 412. That is not the user's to fix, so `v2Resource.write` retries once against a freshly read ETag — but only when the resource's `selfInflicted412` hook says this apply recorded a version for the set in question. A 412 from a genuine outside change still reaches the user, which is the whole point of sending `If-Match`.
 
 ### Type Conversion
 

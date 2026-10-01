@@ -1,7 +1,7 @@
 <!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
 # select_usage_group_set (Resource)
 
-
+A named collection of usage groups, which together attribute an organization's spend. A set holds a linear history of versions; the newest version holds the live groups, and the rest are frozen checkpoints.
 
 ## About
 Usage Group sets are a way to group usage groups together, to learn more about usage groups, see the [SELECT documentation](https://select.dev/docs/reference/using-select/usage-groups).
@@ -20,17 +20,20 @@ resource "select_usage_group_set" "production" {
 
 ### Required
 
-- `name` (String) The name of the usage group set
-- `order` (Number) The display order of the usage group set. Must be a non-negative integer. Lower values appear first.
+- `name` (String) The set's display name. Must be unique within the organization; the API compares names ignoring case and surrounding whitespace, so "Engineering" and "  engineering  " conflict.
+- `order` (Number) Where the set sorts among the organization's other sets. Lower sorts first.
 
 ### Optional
 
-- `organization_id` (String)
-- `team_id` (String)
+- `public` (Boolean) Whether everyone in the organization can see the set.
+- `team_id` (String) The team the set belongs to. Null leaves it unowned.
 
 ### Read-Only
 
-- `id` (String) The unique identifier for the usage group set
+- `etag` (String) Opaque strong ETag for this set. Sent as `If-Match` on updates and deletes so a change made outside Terraform cannot be silently overwritten.
+- `id` (String) The set's identifier in SELECT, assigned when it is created. Use it with `terraform import` to bring an existing set under management.
+- `insights_sync_pending` (Boolean) Whether the set has changed since the nightly job last synced usage groups onto insights. Insight rows may lag the current definitions by up to about 36 hours while this is true.
+- `version` (Number) How many versions the set has. A version is a frozen copy of the set's usage groups; this provider records one per apply that changes them, capturing the state that apply started from. See "Versioning" below.
 
 ## Import
 
@@ -47,3 +50,23 @@ You can obtain the usage group set ID by navigating to the usage group set in th
 ### Usage Group Set Ordering
 
 The `order` field determines the display order in the Select UI.
+
+### Versioning
+
+A version is a frozen copy of a set's usage groups. SELECT keeps them as a
+linear history: the newest version holds the live groups, and the rest are
+checkpoints you can restore from.
+
+Writing a usage group changes the newest version in place; it never adds one. So
+before the first change it makes to a set's groups, this provider records a
+version. Each `terraform apply` therefore leaves behind exactly one checkpoint of
+the state that apply started from, however many groups it went on to change, and
+however many sets it touched — one per set.
+
+The `version` attribute is the number of versions the set has. It goes up by one
+per apply that changes any of the set's groups, and stays put for an apply that
+only changes the set itself — its name, order, team or visibility.
+
+You do not need to configure any of this. It is listed here because the count is
+visible in state and in the SELECT UI, and because it explains why an apply that
+changes one usage group also updates its set.

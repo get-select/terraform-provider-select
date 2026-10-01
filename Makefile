@@ -1,20 +1,11 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
-# The provider is generated from two OpenAPI documents: the v1 public API
-# (openapi.public.json) and the v2 API (openapi.v2.json), which is a separate
-# FastAPI app with its own document. Each needs its own generator config and its
-# own code spec; tfplugingen-framework adds packages rather than replacing the
-# output directory, so the two runs coexist.
-#
-# specpatch fills in what tfplugingen-openapi cannot produce for v2 — dropped
-# descriptions, sensitive attributes, plan modifiers. See tools/specpatch.
+.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+# The provider is generated from the v2 API's OpenAPI document. specpatch fills
+# in what tfplugingen-openapi cannot produce — dropped descriptions, sensitive
+# attributes, plan modifiers. See tools/specpatch.
 codegen-go:
 	mkdir -p ./internal/provider
-	tfplugingen-openapi generate \
-		--config generator_config.yml \
-		--output ./internal/provider/provider_code_spec.json \
-		openapi.public.json
 	tfplugingen-openapi generate \
 		--config generator_config.v2.yml \
 		--output ./internal/provider/provider_code_spec.v2.json \
@@ -24,17 +15,13 @@ codegen-go:
 		-code-spec ./internal/provider/provider_code_spec.v2.json \
 		-overrides generator_overrides.v2.yml
 	tfplugingen-framework generate all \
-		--input ./internal/provider/provider_code_spec.json \
-		--output ./internal/provider
-	tfplugingen-framework generate all \
 		--input ./internal/provider/provider_code_spec.v2.json \
 		--output ./internal/provider
 
 codegen:
-	@echo "Fetching OpenAPI specs from public API..."
-	curl -s -o openapi.public.json https://api.select.dev/public_openapi
+	@echo "Fetching OpenAPI spec..."
 	curl -s -o openapi.v2.json https://api.select.dev/v2/openapi.json
-	@echo "OpenAPI specs downloaded successfully"
+	@echo "OpenAPI spec downloaded successfully"
 	make codegen-go
 build:
 	@echo "Building provider..."
@@ -54,8 +41,8 @@ clean:
 	go clean -i ./... || true
 	@echo "Cleaning generated provider code..."
 	rm -rf ./internal/provider/
-	@echo "Cleaning downloaded OpenAPI specs..."
-	rm -f openapi.public.json openapi.v2.json
+	@echo "Cleaning downloaded OpenAPI spec..."
+	rm -f openapi.v2.json
 	@echo "Tidying Go modules..."
 	go mod tidy
 	@echo "Clean complete!"
@@ -172,6 +159,12 @@ test-budget:
 	@echo "Running budget tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=budget.tftest.hcl
 
+# Alias for the e2e workflow, whose matrix runs `make test-${{ matrix.platform }}`
+# for every leg. The usage group suite already runs as part of test-all
+# (provider.tftest.hcl), so this just gives it a matching name rather than
+# splitting it into its own filtered target.
+test-usage-group: test-all
+
 # Remove connections and budgets a failed run left attached to the organization.
 # `terraform test` tears down what it can, but a run killed mid-apply — or one
 # whose destroy the API refused — leaves a resource behind. A leaked connection
@@ -240,6 +233,7 @@ help:
 	@echo "  test-validate    - Validate test configuration syntax"
 	@echo "  test-go          - Run Go unit tests (no API access needed)"
 	@echo "  test-all         - Run the Terraform provider tests"
+	@echo "  test-usage-group - Alias for test-all, named for the e2e workflow's matrix"
 	@echo "  test             - Run test-go and test-all"
 	@echo "  test-snowflake   - Run Snowflake account tests (needs real Snowflake credentials)"
 	@echo "  test-databricks  - Run Databricks connection tests (needs real Databricks credentials)"

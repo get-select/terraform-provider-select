@@ -34,7 +34,6 @@ var bigQueryConnectionErrors = v2ErrorFormat{
 	Noun:       "BigQuery Connection",
 	Subject:    "the connection",
 	Object:     "the BigQuery connection",
-	Plural:     "BigQuery connections",
 	ReadScope:  "bigquery_connections:read",
 	WriteScope: "bigquery_connections:write",
 }

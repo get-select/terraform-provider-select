@@ -4,299 +4,109 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
-	"terraform-provider-select/internal/provider/resource_usage_group"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	"github.com/hashicorp/terraform-plugin-framework/types"
+	"terraform-provider-select/internal/provider/resource_usage_group"
 )
 
-var _ resource.Resource = (*usageGroupResource)(nil)
-var _ resource.ResourceWithConfigure = (*usageGroupResource)(nil)
-var _ resource.ResourceWithImportState = (*usageGroupResource)(nil)
-
 func NewUsageGroupResource() resource.Resource {
-	return &usageGroupResource{}
-}
-
-type usageGroupResource struct {
-	client *APIClient
-}
-
-func (r *usageGroupResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	if req.ProviderData == nil {
-		return
+	return &v2Resource[resource_usage_group.UsageGroupModel, usageGroupResponse]{
+		typeNameSuffix:     "_usage_group",
+		schema:             resource_usage_group.UsageGroupResourceSchema,
+		errors:             usageGroupErrors,
+		specificDiagnostic: nil,
+		collectionEndpoint: func(m *resource_usage_group.UsageGroupModel) string {
+			return usageGroupsEndpoint(m.UsageGroupSetId.ValueString())
+		},
+		itemEndpoint: func(m *resource_usage_group.UsageGroupModel) string {
+			return usageGroupEndpoint(m.UsageGroupSetId.ValueString(), m.Id.ValueString())
+		},
+		identity: func(m *resource_usage_group.UsageGroupModel) v2Identity {
+			return v2Identity{Id: m.Id, Etag: m.Etag}
+		},
+		prepareWrite:     recordUsageGroupSetVersion,
+		selfInflicted412: usageGroupVersionRecorded,
+		importState:      importUsageGroup,
+		createPayload:    v2Payload(buildUsageGroupCreate),
+		updatePayload:    v2Patch(buildUsageGroupUpdate),
+		applyResponse:    applyUsageGroupResponse,
+		validateConfig:   validateUsageGroupConfig,
 	}
+}
 
-	providerData, ok := req.ProviderData.(*ProviderData)
-	if !ok {
+// recordUsageGroupSetVersion checkpoints the set's groups before this apply
+// changes any of them. Every write to a group runs it; only the first for a
+// given set does any work. See APIClient.EnsureVersion for why this has to
+// happen inside a write rather than once at the start of the apply.
+//
+// This runs before Create's request is sent, so a create the API goes on to
+// reject with a 422 still burns a version — confirmed against the local API
+// that POST .../versions is not idempotent (two calls with nothing changed in
+// between still produce two distinct version records) and that there is no
+// DELETE on a version to undo one after the fact. Moving the version after
+// the create would not help: the version's content is a server-side snapshot
+// taken when the POST lands, not something this provider sends, so recording
+// it after a successful create would check-point the set including the group
+// that create just added rather than the pre-apply state EnsureVersion exists
+// to preserve. Catching the 422 here ahead of time would mean reimplementing
+// the API's own filter validation client-side, which validateUsageGroupConfig
+// deliberately does not do (see its docstring). Every other cost of a version
+// already runs before this call: createPayload and ValidateConfig, both of
+// which report a locally-detectable problem before EnsureVersion is reached.
+// A configuration with a persistent mistake still burns a version per retry;
+// there is no fix available on the client side of this API.
+func recordUsageGroupSetVersion(ctx context.Context, client *APIClient, model *resource_usage_group.UsageGroupModel) diag.Diagnostics {
+	return client.EnsureVersion(ctx, model.UsageGroupSetId.ValueString())
+}
+
+// usageGroupVersionRecorded reports whether this apply has recorded a version
+// of the group's set, which is what makes a precondition failure this
+// provider's own doing rather than a change someone else made.
+func usageGroupVersionRecorded(client *APIClient, model *resource_usage_group.UsageGroupModel) bool {
+	return client.VersionRecorded(model.UsageGroupSetId.ValueString())
+}
+
+// importUsageGroup reads a `terraform import` address of the form
+// `usage_group_set_id/usage_group_id`. A group is addressed through its set on
+// every route, so its own id is not enough to find it.
+func importUsageGroup(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	setId, id, found := strings.Cut(req.ID, "/")
+	if !found || setId == "" || id == "" {
 		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *ProviderData, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			"Invalid Usage Group Import ID",
+			fmt.Sprintf("Expected an import ID of the form `usage_group_set_id/usage_group_id`, got %q.", req.ID),
 		)
 		return
 	}
 
-	r.client = providerData.Client
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("usage_group_set_id"), setId)...)
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
 }
 
-func (r *usageGroupResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
-	resp.TypeName = req.ProviderTypeName + "_usage_group"
-}
+// validateUsageGroupConfig rejects at plan time a filter the API would reject
+// on the way in, so a mistake costs a plan rather than a round trip. Only the
+// encoding is checked here; whether the filter names real dimensions is the
+// API's to judge.
+func validateUsageGroupConfig(ctx context.Context, config *resource_usage_group.UsageGroupModel) diag.Diagnostics {
+	var diags diag.Diagnostics
 
-func (r *usageGroupResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
-	baseSchema := resource_usage_group.UsageGroupResourceSchema(ctx)
-
-	resp.Schema = baseSchema
-}
-
-func (r *usageGroupResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data resource_usage_group.UsageGroupModel
-
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
+	expression := config.FilterExpressionJson
+	if expression.IsNull() || expression.IsUnknown() {
+		return diags
 	}
 
-	resp.Diagnostics.Append(createUsageGroup(ctx, &data, r.client)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-func (r *usageGroupResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data resource_usage_group.UsageGroupModel
-
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(readUsageGroup(ctx, &data, r.client)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-func (r *usageGroupResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan resource_usage_group.UsageGroupModel
-	var state resource_usage_group.UsageGroupModel
-
-	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	updateModel := resource_usage_group.UsageGroupModel{
-		Id:                   state.Id,
-		Name:                 plan.Name,
-		Order:                plan.Order,
-		Budget:               plan.Budget,
-		FilterExpressionJson: plan.FilterExpressionJson,
-		OrganizationId:       state.OrganizationId,
-		UsageGroupSetId:      state.UsageGroupSetId,
-		UsageGroupSetName:    state.UsageGroupSetName,
-		CreatedAt:            state.CreatedAt,
-		UpdatedAt:            state.UpdatedAt,
-	}
-
-	resp.Diagnostics.Append(updateUsageGroup(ctx, &updateModel, r.client)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.Set(ctx, &updateModel)...)
-}
-
-func (r *usageGroupResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data resource_usage_group.UsageGroupModel
-
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	resp.Diagnostics.Append(deleteUsageGroup(ctx, &data, r.client)...)
-}
-
-func (r *usageGroupResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	importID := req.ID
-	parts := strings.Split(importID, "/")
-
-	if len(parts) != 2 {
-		resp.Diagnostics.AddError(
-			"Invalid Import ID Format",
-			fmt.Sprintf("Expected import ID in format 'usage_group_set_id/usage_group_id', got: %s", importID),
+	if !json.Valid([]byte(expression.ValueString())) {
+		diags.AddAttributeError(
+			path.Root("filter_expression_json"),
+			"Invalid Usage Group Filter",
+			"filter_expression_json must be a JSON-encoded filter.",
 		)
-		return
-	}
-
-	usageGroupSetID := parts[0]
-	usageGroupID := parts[1]
-
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("usage_group_set_id"), usageGroupSetID)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), usageGroupID)...)
-}
-
-func createUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupModel, client *APIClient) diag.Diagnostics {
-	orgId := client.GetOrganizationId()
-	usageGroupSetId := model.UsageGroupSetId.ValueString()
-
-	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
-	if versionDiags.HasError() {
-		return versionDiags
-	}
-
-	if usageGroupSetId == "" {
-		return diag.Diagnostics{
-			diag.NewErrorDiagnostic(
-				"Missing Usage Group Set ID",
-				"usage_group_set_id is required but was not provided in the configuration.",
-			),
-		}
-	}
-
-	requestModel := resource_usage_group.UsageGroupModel{
-		Name:                 model.Name,
-		Order:                model.Order,
-		Budget:               model.Budget,
-		FilterExpressionJson: model.FilterExpressionJson,
-		UsageGroupSetId:      model.UsageGroupSetId,
-	}
-
-	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups", orgId, usageGroupSetId)
-	diags := client.Post(ctx, endpoint, &requestModel, model)
-
-	if !diags.HasError() {
-		model.OrganizationId = types.StringValue(orgId)
-		// After successful creation, ensure organization_id is set in the response model
-		if !diags.HasError() {
-			model.OrganizationId = types.StringValue(orgId)
-		}
 	}
 
 	return diags
-}
-
-func readUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupModel, client *APIClient) diag.Diagnostics {
-	orgId := client.GetOrganizationId()
-	usageGroupSetId := model.UsageGroupSetId.ValueString()
-	usageGroupId := model.Id.ValueString()
-
-	if usageGroupSetId == "" {
-		return diag.Diagnostics{
-			diag.NewErrorDiagnostic(
-				"Missing Usage Group Set ID",
-				"usage_group_set_id is required but was not found in the state.",
-			),
-		}
-	}
-
-	if usageGroupId == "" {
-		return diag.Diagnostics{
-			diag.NewErrorDiagnostic(
-				"Missing Usage Group ID",
-				"usage_group_id is required but was not found in the state.",
-			),
-		}
-	}
-
-	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups/%s", orgId, usageGroupSetId, usageGroupId)
-	diags := client.Get(ctx, endpoint, model)
-
-	if !diags.HasError() {
-		model.OrganizationId = types.StringValue(orgId)
-	}
-
-	return diags
-}
-
-func updateUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupModel, client *APIClient) diag.Diagnostics {
-	orgId := client.GetOrganizationId()
-	usageGroupSetId := model.UsageGroupSetId.ValueString()
-
-	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
-	if versionDiags.HasError() {
-		return versionDiags
-	}
-	usageGroupId := model.Id.ValueString()
-
-	if usageGroupSetId == "" {
-		return diag.Diagnostics{
-			diag.NewErrorDiagnostic(
-				"Missing Usage Group Set ID",
-				"usage_group_set_id is required but was not found in the plan.",
-			),
-		}
-	}
-
-	if usageGroupId == "" {
-		return diag.Diagnostics{
-			diag.NewErrorDiagnostic(
-				"Missing Usage Group ID",
-				"usage_group_id is required but was not found in the plan.",
-			),
-		}
-	}
-
-	requestModel := resource_usage_group.UsageGroupModel{
-		Id:                   model.Id,
-		Name:                 model.Name,
-		Order:                model.Order,
-		Budget:               model.Budget,
-		FilterExpressionJson: model.FilterExpressionJson,
-	}
-
-	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups/%s", orgId, usageGroupSetId, usageGroupId)
-	diags := client.Put(ctx, endpoint, &requestModel, model)
-
-	if !diags.HasError() {
-		model.OrganizationId = types.StringValue(orgId)
-	}
-
-	return diags
-}
-
-func deleteUsageGroup(ctx context.Context, model *resource_usage_group.UsageGroupModel, client *APIClient) diag.Diagnostics {
-	orgId := client.GetOrganizationId()
-	usageGroupSetId := model.UsageGroupSetId.ValueString()
-	usageGroupId := model.Id.ValueString()
-
-	_, versionDiags := client.GetOrCreateVersion(ctx, usageGroupSetId)
-	if versionDiags.HasError() {
-		return versionDiags
-	}
-
-	if usageGroupSetId == "" {
-		return diag.Diagnostics{
-			diag.NewErrorDiagnostic(
-				"Missing Usage Group Set ID",
-				"usage_group_set_id is required but was not found in the state.",
-			),
-		}
-	}
-
-	if usageGroupId == "" {
-		return diag.Diagnostics{
-			diag.NewErrorDiagnostic(
-				"Missing Usage Group ID",
-				"usage_group_id is required but was not found in the state.",
-			),
-		}
-	}
-
-	endpoint := fmt.Sprintf("/api/%s/usage-group-sets/%s/usage-groups/%s", orgId, usageGroupSetId, usageGroupId)
-	return client.Delete(ctx, endpoint)
 }

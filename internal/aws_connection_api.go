@@ -26,7 +26,6 @@ var awsConnectionErrors = v2ErrorFormat{
 	Noun:       "AWS Connection",
 	Subject:    "the connection",
 	Object:     "the AWS connection",
-	Plural:     "AWS connections",
 	ReadScope:  "aws_accounts:read",
 	WriteScope: "aws_accounts:write",
 }

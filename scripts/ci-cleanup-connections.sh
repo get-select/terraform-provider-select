@@ -16,7 +16,7 @@
 # is deliberately given the bare prefix to reach older leaks.
 #
 # Environment:
-#   SELECT_API_KEY          key with <resource>:read and :write for all five
+#   SELECT_API_KEY          key with <resource>:read and :write for all six
 #   SELECT_ORGANIZATION_ID  organization the resources belong to
 #   SELECT_API_URL          defaults to https://api.select.dev
 #   CI_RESOURCE_PREFIX      defaults to terraform-test
@@ -34,6 +34,9 @@ COLLECTIONS=(
   bigquery-connections
   aws-accounts
   budgets
+  # Deleting a set also deletes the groups nested under it, so no separate
+  # sweep of usage-group-sets/{id}/usage-groups is needed.
+  usage-group-sets
 )
 
 deleted=0

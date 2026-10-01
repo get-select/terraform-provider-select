@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
-# Generator config for the SELECT API v2 surface (https://api.select.dev/v2).
-#
-# v2 is a separate FastAPI app with its own OpenAPI document, so it needs its own
-# generator config and its own generated code spec — see generator_config.yml for
-# the v1 public API.
+# Generator config for the SELECT API v2 surface (https://api.select.dev/v2),
+# which every resource in this provider is built from.
 #
 # tfplugingen-openapi's `overrides` only supports `description` (its Override
 # struct has a single field). Everything the schema needs beyond that — sensitive
@@ -213,3 +210,117 @@ resources:
               A JSON-encoded filter narrowing which spend counts toward the budget.
               Null counts all spend. The root of the filter must be a group —
               `{"operator": "and"|"or", "filters": [...]}` — not a single leaf filter.
+
+  usage_group_set:
+    create:
+      path: /usage-group-sets
+      method: POST
+    read:
+      path: /usage-group-sets/{usage_group_set_id}
+      method: GET
+    update:
+      path: /usage-group-sets/{usage_group_set_id}
+      method: PATCH
+    delete:
+      path: /usage-group-sets/{usage_group_set_id}
+      method: DELETE
+    schema:
+      attributes:
+        aliases:
+          usage_group_set_id: id
+        overrides:
+          id:
+            description: >-
+              The set's identifier in SELECT, assigned when it is created. Use it with
+              `terraform import` to bring an existing set under management.
+          name:
+            description: >-
+              The set's display name. Must be unique within the organization; the API
+              compares names ignoring case and surrounding whitespace, so "Engineering"
+              and "  engineering  " conflict.
+          order:
+            description: >-
+              Where the set sorts among the organization's other sets. Lower sorts first.
+          team_id:
+            description: >-
+              The team the set belongs to. Null leaves it unowned.
+          public:
+            description: Whether everyone in the organization can see the set.
+          version:
+            description: >-
+              How many versions the set has. A version is a frozen copy of the set's
+              usage groups; this provider records one per apply that changes them,
+              capturing the state that apply started from. See "Versioning" below.
+          etag:
+            description: >-
+              Opaque strong ETag for this set. Sent as `If-Match` on updates and deletes
+              so a change made outside Terraform cannot be silently overwritten.
+          insights_sync_pending:
+            description: >-
+              Whether the set has changed since the nightly job last synced usage groups
+              onto insights. Insight rows may lag the current definitions by up to about
+              36 hours while this is true.
+
+  usage_group:
+    create:
+      path: /usage-group-sets/{usage_group_set_id}/usage-groups
+      method: POST
+    read:
+      path: /usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
+      method: GET
+    update:
+      path: /usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
+      method: PATCH
+    delete:
+      path: /usage-group-sets/{usage_group_set_id}/usage-groups/{usage_group_id}
+      method: DELETE
+    schema:
+      # filter_expression is a recursive 8-way anyOf, beyond generating at all, so
+      # filter_expression_json is this resource's whole filter surface — the same
+      # arrangement budgets use. The API 422s ("Use exactly one of
+      # filter_expression or filter_expression_json") when both keys are present,
+      # and counts an explicit null as present, so this resource must never emit
+      # the key at all.
+      ignores:
+        - filter_expression
+      attributes:
+        aliases:
+          usage_group_id: id
+        overrides:
+          id:
+            description: >-
+              The group's identifier in SELECT, assigned when it is created. Use it with
+              `terraform import` — as `usage_group_set_id/id` — to bring an existing
+              group under management.
+          usage_group_set_id:
+            description: >-
+              The set this group belongs to. Changing it forces a new group, since the
+              API does not move a group between sets.
+          name:
+            description: >-
+              The group's display name. The API does not require this to be unique;
+              two groups in the same set may share a name.
+          filter_expression_json:
+            description: >-
+              A JSON-encoded filter choosing which spend is attributed to this group.
+              The root must be a group — `{"operator": "and"|"or", "filters": [...]}` —
+              rather than a single leaf filter. Which fields a filter can name depends
+              on the set's scope; see "Filter Expressions" below.
+          budget:
+            description: >-
+              The group's budget in credits. Null means the group has no budget.
+          order:
+            description: >-
+              Both the display order and the cost allocation precedence within the set.
+              Where two groups' filters overlap, spend is attributed to the one with the
+              lower order. Prefer unique values within a set.
+          etag:
+            description: >-
+              Opaque strong ETag for this group. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.
+          create_time:
+            description: When the group was created — RFC 3339 UTC.
+          update_time:
+            description: >-
+              RFC 3339 UTC. SELECT does not currently advance this when the
+              group's fields change, so compare etag to detect a change.

@@ -27,7 +27,6 @@ var snowflakeAccountErrors = v2ErrorFormat{
 	Noun:       "Snowflake Account",
 	Subject:    "the account",
 	Object:     "the Snowflake account",
-	Plural:     "Snowflake accounts",
 	ReadScope:  "snowflake_accounts:read",
 	WriteScope: "snowflake_accounts:write",
 }

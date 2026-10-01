@@ -14,8 +14,10 @@ func NewAwsConnectionResource() resource.Resource {
 		schema:             resource_aws_connection.AwsConnectionResourceSchema,
 		errors:             awsConnectionErrors,
 		specificDiagnostic: awsConnectionSpecificDiagnostic,
-		collectionEndpoint: awsAccountsEndpoint,
-		itemEndpoint:       awsConnectionEndpoint,
+		collectionEndpoint: func(*resource_aws_connection.AwsConnectionModel) string { return awsAccountsEndpoint },
+		itemEndpoint: func(m *resource_aws_connection.AwsConnectionModel) string {
+			return awsConnectionEndpoint(m.Id.ValueString())
+		},
 		identity: func(m *resource_aws_connection.AwsConnectionModel) v2Identity {
 			return v2Identity{Id: m.Id, Etag: m.Etag}
 		},

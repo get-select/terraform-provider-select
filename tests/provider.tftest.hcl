@@ -7,10 +7,11 @@ variables {
   # and must correlate to an APIKey in the Db of whatever instance you're testing against
   # TF_VAR_select_api_key
   # TF_VAR_select_organization_id
-  test_team_id          = "2f0899e2-2746-4300-887c-524e64b5a138"
-  usage_group_set_name  = "terraform-test-set"
+  # test_team_id, usage_group_set_name and usage_group_name all default in
+  # tests/main.tf and are overridable with TF_VAR_test_team_id,
+  # TF_VAR_usage_group_set_name and TF_VAR_usage_group_name; a file-level
+  # default here would outrank those environment variables.
   usage_group_set_order = 1
-  usage_group_name      = "terraform-test-group"
   usage_group_order     = 1
   usage_group_budget    = 100.0
 }
@@ -181,12 +182,12 @@ run "update_usage_group_set" {
   command = apply
 
   variables {
-    usage_group_set_name  = "terraform-test-set-updated"
-    usage_group_set_order = 5
+    usage_group_set_name_suffix = "-updated"
+    usage_group_set_order       = 5
   }
 
   assert {
-    condition     = select_usage_group_set.test_org[0].name == "terraform-test-set-updated"
+    condition     = select_usage_group_set.test_org[0].name == "${var.usage_group_set_name}-updated"
     error_message = "Usage group set name should be updated"
   }
 
@@ -207,13 +208,13 @@ run "update_usage_group" {
   command = apply
 
   variables {
-    usage_group_name   = "terraform-test-group-updated"
-    usage_group_order  = 3
-    usage_group_budget = 50.0
+    usage_group_name_suffix = "-updated"
+    usage_group_order       = 3
+    usage_group_budget      = 50.0
   }
 
   assert {
-    condition     = select_usage_group.test_basic[0].name == "terraform-test-group-updated"
+    condition     = select_usage_group.test_basic[0].name == "${var.usage_group_name}-updated"
     error_message = "Usage group name should be updated"
   }
 
@@ -231,5 +232,113 @@ run "update_usage_group" {
   assert {
     condition     = select_usage_group.test_basic[0].id != null
     error_message = "Usage group ID should remain stable during updates"
+  }
+}
+
+# Test 8: The attributes v2 added, and the ones it removed.
+#
+# organization_id is gone: v1 carried the organization in the path, so the
+# resource had an attribute for it, and v2 scopes by the x-tenant-id header the
+# provider block already supplies. A configuration that still sets it fails to
+# validate, which is the breaking part of this migration.
+run "v2_attributes_are_populated" {
+  command = apply
+
+  # ETags drive optimistic concurrency on every v2 write. Without one in state
+  # an update would have nothing to send as If-Match and the API would refuse it
+  # with 428.
+  assert {
+    condition     = select_usage_group_set.test_org[0].etag != null && select_usage_group_set.test_org[0].etag != ""
+    error_message = "A usage group set should carry the ETag its updates send as If-Match"
+  }
+
+  assert {
+    condition     = select_usage_group.test_basic[0].etag != null && select_usage_group.test_basic[0].etag != ""
+    error_message = "A usage group should carry the ETag its updates send as If-Match"
+  }
+
+  # Recording a version is what keeps the state an apply started from
+  # restorable. Every apply that touches a set's groups records exactly one, so
+  # by now the count has moved past the 1 a freshly created set has.
+  assert {
+    condition     = select_usage_group_set.test_org[0].version > 1
+    error_message = "Each apply that changes a set's groups should record one version, so the count should have grown"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_org[0].public != null
+    error_message = "public should be resolved rather than left unknown"
+  }
+
+  assert {
+    condition     = select_usage_group_set.test_org[0].insights_sync_pending != null
+    error_message = "insights_sync_pending should be resolved rather than left unknown"
+  }
+
+  assert {
+    condition     = select_usage_group.test_basic[0].create_time != null && select_usage_group.test_basic[0].update_time != null
+    error_message = "A usage group should carry the timestamps v2 renamed from created_at/updated_at"
+  }
+
+  assert {
+    condition     = select_usage_group.test_basic[0].usage_group_set_id == select_usage_group_set.test_org[0].id
+    error_message = "A usage group should stay attached to the set it was created in"
+  }
+}
+
+# Test 9: Clearing a budget.
+#
+# budget is the one field on a usage group the API lets a caller clear, so
+# removing it from the configuration has to reach the API as an explicit null.
+# Omitting the key would leave the old budget in place and the apply would fail
+# on an inconsistent result.
+run "clear_usage_group_budget" {
+  command = apply
+
+  variables {
+    usage_group_name_suffix = "-updated"
+    usage_group_order       = 3
+    usage_group_budget      = null
+  }
+
+  assert {
+    condition     = select_usage_group.test_basic[0].budget == null
+    error_message = "Removing budget from the configuration should clear it rather than leave the old value"
+  }
+}
+
+# Test 10: Deleting the sets and their groups.
+#
+# Terraform's own teardown would remove them anyway, but it asserts nothing and
+# swallows what it cannot remove, so a delete the API refuses has to fail here
+# instead. Each group delete records a version of its set, which rotates the
+# ETags that the remaining deletes send as If-Match. This step therefore also
+# exercises the self-inflicted 412 retry against the real API.
+run "delete_usage_groups" {
+  command = apply
+
+  variables {
+    usage_group_name_suffix  = "-updated"
+    usage_group_order        = 3
+    usage_group_budget       = null
+    enable_usage_group_tests = false
+  }
+
+  assert {
+    condition = (
+      length(select_usage_group.test_basic) == 0 &&
+      length(select_usage_group.test_with_budget) == 0 &&
+      length(select_usage_group.test_complex_filter) == 0
+    )
+    error_message = "Every usage group should have been destroyed"
+  }
+
+  assert {
+    condition = (
+      length(select_usage_group_set.test_org) == 0 &&
+      length(select_usage_group_set.test_team) == 0 &&
+      length(select_usage_group_set.test_select_org) == 0
+    )
+    error_message = "Every usage group set should have been destroyed"
   }
 }

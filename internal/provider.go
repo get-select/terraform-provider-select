@@ -4,8 +4,12 @@ package provider
 
 import (
 	"context"
+	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -97,6 +101,13 @@ func (p *selectProvider) Configure(ctx context.Context, req provider.ConfigureRe
 	apiURL := config.ApiURL.ValueString()
 	if apiURL == "" {
 		apiURL = "https://api.select.dev"
+	} else {
+		normalized, diags := normalizeAPIURL(apiURL)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		apiURL = normalized
 	}
 
 	client := NewAPIClient(apiKey, organizationId, apiURL)
@@ -107,6 +118,57 @@ func (p *selectProvider) Configure(ctx context.Context, req provider.ConfigureRe
 
 	resp.ResourceData = providerData
 	resp.DataSourceData = providerData
+}
+
+// normalizeAPIURL checks that a configured select_api_url is one the provider
+// can build endpoints from, and trims a trailing slash so it behaves the same
+// as a value without one.
+//
+// A trailing slash is a typo worth absorbing silently: left alone, it doubles
+// up with an endpoint's own leading slash and the API answers the resulting
+// path with a plain 404 — indistinguishable, to Read, from the resource itself
+// being gone. Three other mistakes fail the same invisible way: a URL with no
+// scheme; a URL that ends in "/v2", such as "http://localhost:8000/v2", because
+// the endpoint constants in internal/*_api.go already supply that prefix; and a
+// URL with a query or fragment, which would swallow the appended path. Each is
+// worth a clear diagnostic instead of a silent, wrong request. Any other path
+// is kept, so the API can be served under a proxy prefix.
+func normalizeAPIURL(raw string) (string, diag.Diagnostics) {
+	invalid := func(detail string) (string, diag.Diagnostics) {
+		return "", diag.Diagnostics{
+			diag.NewErrorDiagnostic("Invalid select_api_url", detail),
+		}
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return invalid(fmt.Sprintf("%q could not be parsed as a URL: %v", raw, err))
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return invalid(fmt.Sprintf("%q must start with http:// or https://.", raw))
+	}
+	if parsed.Host == "" {
+		return invalid(fmt.Sprintf("%q has no host.", raw))
+	}
+	// A literal "?" or "#" opens a query or fragment even when nothing follows
+	// it, and url.URL reports an empty one the same as none at all.
+	if strings.ContainsAny(raw, "?#") {
+		return invalid(fmt.Sprintf(
+			"%q includes a query string or fragment. Every resource appends its own path to "+
+				"select_api_url, so that path would land inside the query or fragment instead.",
+			raw,
+		))
+	}
+	if strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/v2") {
+		return invalid(fmt.Sprintf(
+			"%q ends in %q. Every resource already builds its own \"/v2/...\" path on top of "+
+				"select_api_url, so this prefix would be applied twice. Remove it, as in "+
+				`"https://api.select.dev".`,
+			raw, "/v2",
+		))
+	}
+
+	return strings.TrimRight(raw, "/"), nil
 }
 
 func (p *selectProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {

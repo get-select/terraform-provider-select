@@ -19,8 +19,12 @@ func NewDatabricksConnectionResource() resource.Resource {
 		schema:             resource_databricks_connection.DatabricksConnectionResourceSchema,
 		errors:             databricksConnectionErrors,
 		specificDiagnostic: databricksConnectionSpecificDiagnostic,
-		collectionEndpoint: databricksConnectionsEndpoint,
-		itemEndpoint:       databricksConnectionEndpoint,
+		collectionEndpoint: func(*resource_databricks_connection.DatabricksConnectionModel) string {
+			return databricksConnectionsEndpoint
+		},
+		itemEndpoint: func(m *resource_databricks_connection.DatabricksConnectionModel) string {
+			return databricksConnectionEndpoint(m.Id.ValueString())
+		},
 		identity: func(m *resource_databricks_connection.DatabricksConnectionModel) v2Identity {
 			return v2Identity{Id: m.Id, Etag: m.Etag}
 		},

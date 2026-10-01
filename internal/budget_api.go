@@ -27,7 +27,6 @@ var budgetErrors = v2ErrorFormat{
 	Noun:       "Budget",
 	Subject:    "the budget",
 	Object:     "the budget",
-	Plural:     "budgets",
 	ReadScope:  "budgets:read",
 	WriteScope: "budgets:write",
 }

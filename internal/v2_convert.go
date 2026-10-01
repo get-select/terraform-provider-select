@@ -120,6 +120,33 @@ func changedNumber(plan, state types.Number) *float64 {
 	return numberPointer(plan)
 }
 
+// changedInt64 is changedString's counterpart for types.Int64.
+func changedInt64(plan, state types.Int64) *int64 {
+	if plan.Equal(state) {
+		return nil
+	}
+	return int64Pointer(plan)
+}
+
+// nullableNumber is nullableString's counterpart, for a clearable numeric field
+// such as a usage group's budget. See nullableString for why the distinction
+// between "omitted" and "explicitly null" has to survive into the request body.
+type nullableNumber struct {
+	value *float64
+}
+
+func (n nullableNumber) MarshalJSON() ([]byte, error) {
+	return json.Marshal(n.value)
+}
+
+// clearedNumber is clearedString's counterpart for types.Number.
+func clearedNumber(plan, state types.Number) *nullableNumber {
+	if plan.IsUnknown() || plan.Equal(state) {
+		return nil
+	}
+	return &nullableNumber{value: numberPointer(plan)}
+}
+
 func stringListPointer(ctx context.Context, value types.List) (*[]string, diag.Diagnostics) {
 	if value.IsNull() || value.IsUnknown() {
 		return nil, nil
@@ -170,9 +197,25 @@ func stringListValue(ctx context.Context, value *[]string) (types.List, diag.Dia
 // preserveEquivalentJSON keeps the configured spelling of a JSON-encoded field
 // when the API returns the same document formatted differently, which would
 // otherwise read as drift on every plan.
+//
+// configured is empty on the first Read after a terraform import: import seeds
+// only the identifying attributes, so there is no configured spelling yet to
+// compare against or to keep. Falling back to the API's raw spelling in that
+// case reproduced a permanent diff against a `jsonencode()`-built config,
+// because `jsonencode` always renders object keys in sorted order and the API
+// re-encodes filters in whatever order its own storage happens to use.
+// Falling back to normalizeJSON's sorted-key rendering instead lines the
+// import case up with `jsonencode`'s output, so the first post-import plan is
+// already empty rather than converging only after an apply.
 func preserveEquivalentJSON(configured types.String, returned *string) types.String {
-	if returned == nil || configured.IsNull() || configured.IsUnknown() {
+	if returned == nil {
 		return stringValue(returned)
+	}
+	if configured.IsNull() || configured.IsUnknown() {
+		if canonical, err := normalizeJSON(*returned); err == nil {
+			return types.StringValue(canonical)
+		}
+		return types.StringValue(*returned)
 	}
 
 	configuredJSON, configuredErr := normalizeJSON(configured.ValueString())

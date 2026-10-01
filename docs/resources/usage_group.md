@@ -1,7 +1,7 @@
 <!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
 # select_usage_group (Resource)
 
-
+One group within a usage group set: a filter over the organization's spend, an optional budget for what it matches, and the precedence it takes when its filter overlaps another group's.
 
 ## About 
 
@@ -170,22 +170,21 @@ resource "select_usage_group" "team_groups" {
 
 ### Required
 
-- `name` (String) The name of the usage group
-- `order` (Number) The display order and cost allocation precedence of the usage group within its usage group set. Must be a non-negative integer. When usage groups have overlapping filter expressions, cost allocation goes to the usage group with the lowest order value first. We strongly recommend using unique order values per usage group within a set.
-- `usage_group_set_id` (String) The ID of the usage group set
+- `filter_expression_json` (String) A JSON-encoded filter choosing which spend is attributed to this group. The root must be a group — `{"operator": "and"|"or", "filters": [...]}` — rather than a single leaf filter. Which fields a filter can name depends on the set's scope; see "Filter Expressions" below.
+- `name` (String) The group's display name. The API does not require this to be unique; two groups in the same set may share a name.
+- `order` (Number) Both the display order and the cost allocation precedence within the set. Where two groups' filters overlap, spend is attributed to the one with the lower order. Prefer unique values within a set.
+- `usage_group_set_id` (String) The set this group belongs to. Changing it forces a new group, since the API does not move a group between sets.
 
 ### Optional
 
-- `budget` (Number) The budget allocated to this usage group
-- `filter_expression_json` (String) A JSON string representing the filter expression that defines which usage belongs to this group
-- `organization_id` (String)
+- `budget` (Number) The group's budget in credits. Null means the group has no budget.
 
 ### Read-Only
 
-- `created_at` (String) The timestamp when the usage group was created.
-- `id` (String) The unique identifier of the usage group.
-- `updated_at` (String) The timestamp when the usage group was last updated.
-- `usage_group_set_name` (String) The name of the usage group set this usage group belongs to.
+- `create_time` (String) When the group was created — RFC 3339 UTC.
+- `etag` (String) Opaque strong ETag for this group. Sent as `If-Match` on updates and deletes so a change made outside Terraform cannot be silently overwritten.
+- `id` (String) The group's identifier in SELECT, assigned when it is created. Use it with `terraform import` — as `usage_group_set_id/id` — to bring an existing group under management.
+- `update_time` (String) RFC 3339 UTC. SELECT does not currently advance this when the group's fields change, so compare etag to detect a change.
 
 ### Filter Expressions
 
