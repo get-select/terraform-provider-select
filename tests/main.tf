@@ -492,6 +492,46 @@ variable "team_role_on_usage_group" {
   default     = true
 }
 
+# SSO group test variables.
+#
+# Like teams, an SSO group makes no call to an external system: SELECT stores
+# the name and gives its roles to the members of the identity provider group
+# at their next login. No identity provider group has the test name, so the
+# roles reach nobody. The suite makes its own usage group set, usage group and
+# team. It defaults to off so provider.tftest.hcl and `make test`/`test-all`
+# are unaffected.
+variable "enable_sso_group_tests" {
+  description = "Whether to manage a real SSO group and a team member that refers to it"
+  type        = bool
+  default     = false
+}
+
+# The start of every name the suite gives an SSO group, team, set or group. CI
+# puts the run id in it, so the sweep can find what a failed run left behind.
+variable "sso_group_name_prefix" {
+  description = "Prefix for the names of the SSO group, team, usage group set and usage group the SSO group suite makes"
+  type        = string
+  default     = "terraform-test-sso-group"
+}
+
+# The rename test needs a second name. A run block cannot build one, because
+# Terraform does not expose var.* inside a run's variables block. So the
+# suffix is its own variable and the name is composed below.
+variable "sso_group_name_suffix" {
+  description = "Appended to the SSO group name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
+}
+
+# When true, the group's organization-wide role changes from editor to
+# monitor_editor: the update grants one role and revokes one. The usage group
+# role does not change.
+variable "sso_group_roles_updated" {
+  description = "Whether the test SSO group holds its updated roles"
+  type        = bool
+  default     = false
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -759,6 +799,57 @@ resource "select_default_role" "test" {
   }
 }
 
+# An SSO group with two roles: one on the whole organization, and viewer on
+# the suite's own usage group. A team takes the group as a member by its name.
+# count keeps them out of the way of every other test.
+resource "select_usage_group_set" "sso_group" {
+  count = var.enable_sso_group_tests ? 1 : 0
+
+  name  = "${var.sso_group_name_prefix}-set"
+  order = 1
+}
+
+resource "select_usage_group" "sso_group" {
+  count = var.enable_sso_group_tests ? 1 : 0
+
+  name                   = "${var.sso_group_name_prefix}-group"
+  order                  = 1
+  usage_group_set_id     = select_usage_group_set.sso_group[0].id
+  filter_expression_json = var.simple_filter_expression_json
+}
+
+resource "select_team" "sso_group" {
+  count = var.enable_sso_group_tests ? 1 : 0
+
+  name = "${var.sso_group_name_prefix}-team"
+}
+
+resource "select_sso_group" "test" {
+  count = var.enable_sso_group_tests ? 1 : 0
+
+  name = "${var.sso_group_name_prefix}-idp-group${var.sso_group_name_suffix}"
+  roles = [
+    { role = var.sso_group_roles_updated ? "monitor_editor" : "editor" },
+    {
+      role = "viewer"
+      scope = {
+        type = "usage_group"
+        id   = select_usage_group.sso_group[0].id
+      }
+    },
+  ]
+}
+
+# A rename of the group changes the identifier, which replaces the member.
+resource "select_team_member" "sso_group" {
+  count = var.enable_sso_group_tests ? 1 : 0
+
+  team_id    = select_team.sso_group[0].id
+  type       = "sso_group"
+  identifier = select_sso_group.test[0].name
+  role       = "viewer"
+}
+
 # Outputs for verification. one() rather than [0]: these are unconditional, so
 # they're still evaluated — and would error on an out-of-range index — when a
 # connection suite runs with enable_usage_group_tests left at its default false.
@@ -833,4 +924,8 @@ output "user_role_id" {
 
 output "default_role_id" {
   value = one(select_default_role.test[*].id)
+}
+
+output "sso_group_team_member_id" {
+  value = one(select_team_member.sso_group[*].id)
 }

@@ -543,3 +543,51 @@ resources:
             description: >-
               Opaque strong ETag for this grant. Sent as `If-Match` on deletes so a
               change made outside Terraform cannot be silently overwritten.
+
+  # An SSO group carries its roles inline. The API requires at least one role
+  # on create and refuses to revoke the last one, so the roles cannot be a
+  # separate resource. roles is ignored here, because the request takes
+  # RoleGrantScope {type, id} but the grant list returns an entity object and
+  # three flat columns. The resource injects a hand-written roles set. See
+  # sso_group_resource.go.
+  sso_group:
+    create:
+      path: /sso-groups
+      method: POST
+    read:
+      path: /sso-groups/{sso_group_id}
+      method: GET
+    update:
+      path: /sso-groups/{sso_group_id}
+      method: PATCH
+    delete:
+      path: /sso-groups/{sso_group_id}
+      method: DELETE
+    schema:
+      ignores:
+        - roles
+      attributes:
+        aliases:
+          sso_group_id: id
+        overrides:
+          id:
+            description: >-
+              The group's identifier in SELECT, which is always the same as `name`. A
+              rename changes it. Use the name with `terraform import` to bring an
+              existing group under management.
+          name:
+            description: >-
+              The group name, exactly as your identity provider reports it. Members of
+              the identity provider group receive the roles at their next login.
+              Changes in place: SELECT renames the group and keeps its roles.
+          etag:
+            description: >-
+              Opaque strong ETag for this group. Sent as `If-Match` on renames and
+              deletes so a change made outside Terraform cannot be silently
+              overwritten. A role change also changes it.
+          create_time:
+            description: >-
+              When the group's earliest role was granted — RFC 3339 UTC. It can change
+              when that role is revoked.
+          update_time:
+            description: When any of the group's roles last changed — RFC 3339 UTC.

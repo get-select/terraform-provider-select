@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-team test-role test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-team test-role test-sso-group test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 # The provider is generated from the v2 API's OpenAPI document. specpatch fills
 # in what tfplugingen-openapi cannot produce — dropped descriptions, sensitive
 # attributes, plan modifiers. See tools/specpatch.
@@ -190,14 +190,29 @@ test-role:
 	@echo "Running role grant tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=role.tftest.hcl
 
+# SSO group tests: select_sso_group with its inline roles, and a team member
+# of type sso_group that refers to the group. Like role grants, an SSO group
+# makes no call to an external system. The suite makes its own team, usage
+# group set and usage group.
+#
+# Required environment:
+#   TF_VAR_select_api_key      an API key with sso_groups, teams and
+#                              usage_group_sets read and write scopes
+#   TF_VAR_select_organization_id
+# Optional:
+#   TF_VAR_sso_group_name_prefix  start of the names the suite gives its group, team, set and usage group
+test-sso-group:
+	@echo "Running SSO group tests..."
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=sso_group.tftest.hcl
+
 # Alias for the e2e workflow, whose matrix runs `make test-${{ matrix.platform }}`
 # for every leg. The usage group suite already runs as part of test-all
 # (provider.tftest.hcl), so this just gives it a matching name rather than
 # splitting it into its own filtered target.
 test-usage-group: test-all
 
-# Remove connections, budgets, usage group sets, teams and role grants a failed
-# run left attached to the organization.
+# Remove connections, budgets, usage group sets, teams, SSO groups and role
+# grants a failed run left attached to the organization.
 # `terraform test` tears down what it can, but a run killed mid-apply — or one
 # whose destroy the API refused — leaves a resource behind. A leaked connection
 # then fails the next run outright, on the name already being in use; a leaked
@@ -215,7 +230,7 @@ test-usage-group: test-all
 #                              only an email that starts with CI_RESOURCE_PREFIX
 #                              is swept. CI sets the role suite's per-run email.
 test-sweep:
-	@echo "Sweeping leftover test connections, budgets, usage group sets, teams and role grants..."
+	@echo "Sweeping leftover test connections, budgets, usage group sets, teams, SSO groups and role grants..."
 	./scripts/ci-cleanup-connections.sh
 
 test-clean:
@@ -281,7 +296,8 @@ help:
 	@echo "  test-budget      - Run budget tests (needs only an API key; no external system involved)"
 	@echo "  test-team        - Run team tests (needs only an API key; no external system involved)"
 	@echo "  test-role        - Run role grant tests (needs only an API key; no external system involved)"
-	@echo "  test-sweep       - Delete connections, budgets, usage group sets, teams and role grants a failed run left behind"
+	@echo "  test-sso-group   - Run SSO group tests (needs only an API key; no external system involved)"
+	@echo "  test-sweep       - Delete connections, budgets, usage group sets, teams, SSO groups and role grants a failed run left behind"
 	@echo "  test-clean       - Clean up test resources and state files"
 	@echo ""
 	@echo "Run individual tests with:"

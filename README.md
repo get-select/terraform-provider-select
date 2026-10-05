@@ -43,6 +43,7 @@ This ensures the provider stays in sync with SELECT's API automatically.
 | `select_team_role` | v2 |
 | `select_user_role` | v2 |
 | `select_default_role` | v2 |
+| `select_sso_group` | v2 |
 
 ### Data Sources
 

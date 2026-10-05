@@ -30,7 +30,8 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `make test-budget` - Budget tests; creates no real connection, so it needs only the same API key every suite already uses
 - `make test-team` - Team, team member and team data source tests; like budget, needs only the API key
 - `make test-role` - Team role, user role and default role grant tests; like budget, needs only the API key
-- `make test-sweep` - Delete connections, budgets, usage group sets, teams and role grants a failed run left attached to the organization
+- `make test-sso-group` - SSO group tests (inline roles, rename, a team member of type `sso_group`); like budget, needs only the API key
+- `make test-sweep` - Delete connections, budgets, usage group sets, teams, SSO groups and role grants a failed run left attached to the organization
 - `make test-clean` - Clean up test state files
 
 **Test Requirements**: Tests require environment variables:
@@ -82,6 +83,7 @@ internal/
 │   ├── resource_databricks_connection/
 │   ├── resource_default_role/
 │   ├── resource_snowflake_account/
+│   ├── resource_sso_group/
 │   ├── resource_team/
 │   ├── resource_team_member/
 │   ├── resource_team_role/
@@ -114,6 +116,7 @@ internal/
 ├── team_role_resource.go / team_role_api.go       # Team role grant: no GET-by-id, no update, no ETag
 ├── user_role_resource.go / user_role_api.go       # User role grant: direct grants only; a default or team-inherited grant reads as gone
 ├── default_role_resource.go / default_role_api.go # Default role grant: no GET-by-id, no update
+├── sso_group_resource.go / sso_group_api.go       # SSO group with an inline roles set; hand-written CRUD, not a v2Resource
 └── team_data_source.go               # select_team data source: look up a team by exact name
 ```
 
@@ -229,6 +232,7 @@ The v2 surface differs from v1 in ways the client has to honour:
 - **Not every property survives codegen.** A `oneOf` discriminated union (budget's `period`) makes `tfplugingen-openapi` drop the whole resource with "schema composition is currently not supported," and a recursive `anyOf` (budget's `filter_expression`) is both ungeneratable and, on this API, dangerous to emit at all — sending both `filter_expression` and `filter_expression_json` 422s, and an explicit null counts as present. Both go in the resource's `ignores` list in `generator_config.v2.yml`; `period` is then hand-written as a `types.Object` attribute injected into the generated schema, and `filter_expression_json`, a plain JSON-encoded string, is the resource's whole filter surface.
 - **Some child resources have no GET-by-id.** Team members and role grants can only be listed. Set the `v2Resource.fetch` hook to `v2ListAndFind(...)`: Read pages through the list and answers a missing item with a 404, so the resource leaves state like any deleted resource. `tfplugingen-openapi` still requires a `read` operation, so `generator_config.v2.yml` points `read` at the create operation, which has the same response schema and path parameters.
 - **Some resources have no update and no ETag.** A team role grant and a default role grant cannot change: make every attribute force replacement and set `updatePayload: v2NoUpdate[...]()`. A team role grant also has no ETag; its `identity` returns a null `Etag`, and `ifMatchHeader` then sends no `If-Match`.
+- **An SSO group carries its roles inline.** `POST /sso-groups` needs at least one role and the API refuses to revoke the last one, so `select_sso_group` has a `roles` set and there is no SSO group role resource. It is hand-written, not a `v2Resource`: Read is two requests (get the group, list its roles), the group's id is its name so a rename changes the URL, and an update is many requests. Update renames first (PATCH with `If-Match`) and writes the new id to state at once, then grants the added roles, then revokes the removed roles, so the group never has zero roles, then gets the group for its new ETag and lists the roles. State then takes the plan; a role list that differs from the plan gives a warning, not state that differs from the plan, which Terraform would report as a provider bug. A failed step writes what SELECT holds after the steps before it. A rename that fails with a 5xx or no readable response can still have happened, so Update moves state to the new name only when the old name answers 404 and the new name holds a group. A set element holds only `role` and `scope`, with no grant id: a computed value in an element is unknown at plan time and makes every plan replace the element. Roles are compared by role, scope type and scope id without case, so a case-only change sends nothing, and Read pairs each listed grant with its configured element to keep the configured form.
 - **Lists are paginated.** Use `v2ListAll` / `v2FindInList` from `v2_list.go`; they send `max_results` and follow `page_token` until it is empty.
 - **Data sources are hand-written.** The generator builds a data source only from a GET-by-id route, and a lookup by name has none. `v2DataSource` supplies Configure/Metadata/Schema/Read; a data source gives it a schema and a lookup function.
 - **`doRequest` returns the status.** `doJSONRequest` flattens everything into diagnostics (and reports a 404 as a warning) for the v1 resources; callers that need to act on a status, such as removing a deleted resource from state, use `doRequest` directly.
@@ -245,4 +249,4 @@ Tests run against the live SELECT API and create real resources. Always run `mak
 
 The connection suites go further: each one drives a full create → update → delete cycle, with the delete written as a run block that flips the suite's `enable_*` variable to `false`. Terraform's own teardown would destroy the resource anyway, but it asserts nothing and swallows what it cannot remove, so a delete the API refuses has to fail the test rather than pass quietly. When one of these fails partway it leaves a connection attached to the organization, and the name is then in use for good — `make test-sweep` clears it.
 
-CI runs Databricks, BigQuery, AWS, Budget, Usage Group, Team and Role from `.github/workflows/e2e.yaml` against the deployed API with a dedicated test organization, taking credentials from GitHub secrets. Because one organization backs every run, the workflow serializes on a `concurrency` group and names each resource after the run id. Snowflake is excluded from CI for now: SELECT claims a Snowflake organization globally, not per SELECT org, and every test account currently available is already claimed elsewhere. `make test-snowflake` still works locally against a dedicated, unclaimed fixture. Budget needs no credentials of its own — creating one makes no call to an external system — so it joins the matrix without adding any secrets.
+CI runs Databricks, BigQuery, AWS, Budget, Usage Group, Team, Role and SSO Group from `.github/workflows/e2e.yaml` against the deployed API with a dedicated test organization, taking credentials from GitHub secrets. Because one organization backs every run, the workflow serializes on a `concurrency` group and names each resource after the run id. Snowflake is excluded from CI for now: SELECT claims a Snowflake organization globally, not per SELECT org, and every test account currently available is already claimed elsewhere. `make test-snowflake` still works locally against a dedicated, unclaimed fixture. Budget needs no credentials of its own — creating one makes no call to an external system — so it joins the matrix without adding any secrets.

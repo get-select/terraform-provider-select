@@ -1,0 +1,76 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+Each `{{ .Name }}` maps one group from your identity provider to SELECT roles. Set `name` to the group name exactly as your identity provider sends it. The provider does not create the group in your identity provider.
+
+Members of the group receive the roles at their next login. A role change, a rename or a delete has no effect on a member until that member logs in again.
+
+`roles` holds every role of the group. Each element is one `role` on one `scope`. Omit `scope` to grant the role on the whole organization. To grant it on one resource, set `scope.type` and `scope.id`. The set must hold at least one role, because SELECT does not keep a group with no roles. For this reason, the roles of an SSO group are part of this resource, and there is no separate role grant resource for an SSO group.
+
+This resource is backed by SELECT's v2 API, at `/v2/sso-groups`.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+### Add the group to a team
+
+A team accepts an SSO group as a member. Use `select_team_member` with `type = "sso_group"` and set `identifier` to the group's `name`, as in the example above. Members of the group then also hold the roles of the team.
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the group name, which is also its ID:
+
+```bash
+terraform import {{ .Name }}.example "data-analysts"
+```
+
+A name can hold spaces or a forward slash. Put the whole name in quotes.
+
+To list the groups and their roles with the API:
+
+```bash
+curl -s https://api.select.dev/v2/sso-groups \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name}'
+
+curl -s "https://api.select.dev/v2/sso-groups/$(jq -rn --arg n "$GROUP_NAME" '$n | @uri')/roles" \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, role, entity}'
+```
+
+## Additional Information
+
+### The roles set is authoritative
+
+The provider reads every role of the group from SELECT. A role granted to the group outside Terraform, for example in the SELECT UI, shows as a change in the next plan, and the next apply revokes it.
+
+After an update, the provider lists the group's roles again. If they changed outside Terraform during the apply, the provider shows a warning, and the next plan shows the difference. If SELECT holds the same role on the same scope more than once, the set shows it once, with a warning.
+
+Two elements cannot grant the same `role` on the same scope. The provider compares scope IDs without case, and an omitted `scope` is the same as `scope.type = "organization"`.
+
+### How a change is applied
+
+SELECT cannot change a role grant. A change to `roles` grants each new role and revokes each removed role. The provider grants the new roles first and then revokes the removed roles, so the group always holds at least one role. A change to only the case of a `scope.id`, or from an omitted `scope` to `scope.type = "organization"`, sends no grant and no revoke.
+
+### Renaming a group
+
+A change to `name` renames the group in place, and SELECT keeps its roles. The group's ID is its name, so `id` changes too. A `select_team_member` that refers to the group by its name is replaced, because its `identifier` changes.
+
+If a later step of the same apply fails, state still holds the new name. If the rename request itself fails with a server error or no response, the provider reads the group at the old and the new name. State holds the new name only if the old name is gone and a group is at the new name. State also holds the roles that SELECT holds after the steps that succeeded, so the next plan shows only the changes that remain.
+
+### Changes made outside Terraform
+
+A rename and a delete carry the group's `etag` as an `If-Match` header, so SELECT refuses them if the group changed since Terraform last read it. A role change also changes the `etag`. When SELECT refuses a write for this reason, run `terraform apply -refresh-only` to pick up the current state and then apply again.
+
+`create_time` is the time that SELECT granted the group's earliest role, so it can change when that role is revoked.
+
+### After an import
+
+After `terraform import`, the first plan can show a change to `roles` when the configuration and SELECT give the same grant in two forms: a `scope.id` in a different case, or `scope.type = "organization"` where SELECT reports no scope. Applying that plan sends no grant and no revoke, and it records the configured form in state.
