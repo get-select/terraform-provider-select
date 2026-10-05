@@ -72,11 +72,12 @@ func teamDataSourceSchema(ctx context.Context) schema.Schema {
 // readTeamByName lists the teams that name__ilike matches and keeps the one
 // with exactly the configured name. name__ilike compares without case, and
 // "%" and "_" in a name act as wildcards, so the list can hold more teams
-// than the one wanted. The exact match removes them.
+// than the one wanted. The exact match removes them. See teamNameFilter for
+// the one case that sends no filter.
 func readTeamByName(ctx context.Context, client *APIClient, model *teamDataSourceModel) diag.Diagnostics {
 	name := model.Name.ValueString()
 
-	candidates, apiErr, diags := v2ListAll[teamResponse](ctx, client, teamsEndpoint, url.Values{"name__ilike": {name}})
+	candidates, apiErr, diags := v2ListAll[teamResponse](ctx, client, teamsEndpoint, teamNameFilter(name))
 	if diags.HasError() {
 		return diags
 	}
@@ -96,6 +97,19 @@ func readTeamByName(ctx context.Context, client *APIClient, model *teamDataSourc
 	model.CreateTime = types.StringValue(team.CreateTime)
 	model.UpdateTime = types.StringValue(team.UpdateTime)
 	return nil
+}
+
+// teamNameFilter is the list query for a lookup by name. A "%" or "_" in the
+// name only makes name__ilike match more teams, which the exact match then
+// removes. A backslash can be an escape character in a LIKE pattern, and the
+// API does not document how it treats one, so it could make the filter miss
+// the team. For a name that holds a backslash, the lookup sends no filter and
+// matches over the full list of teams.
+func teamNameFilter(name string) url.Values {
+	if strings.Contains(name, `\`) {
+		return nil
+	}
+	return url.Values{"name__ilike": {name}}
 }
 
 // matchTeamByName returns the one candidate whose name is exactly name. It

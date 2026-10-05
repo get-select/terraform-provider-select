@@ -5,6 +5,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -19,8 +20,10 @@ func teamMembersEndpoint(teamId string) string {
 	return fmt.Sprintf("%s/members", teamEndpoint(teamId))
 }
 
+// teamMemberEndpoint escapes the member id as one path segment. teamEndpoint
+// escapes the team id.
 func teamMemberEndpoint(teamId, id string) string {
-	return fmt.Sprintf("%s/%s", teamMembersEndpoint(teamId), id)
+	return fmt.Sprintf("%s/%s", teamMembersEndpoint(teamId), url.PathEscape(id))
 }
 
 // teamMemberErrors words the failures every v2 resource can hit. The member

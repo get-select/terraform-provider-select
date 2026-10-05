@@ -259,3 +259,49 @@ func TestImportTeamMemberRejectsAddressesMissingAnId(t *testing.T) {
 		}
 	}
 }
+
+func TestTeamEndpointsEscapeEachPathSegment(t *testing.T) {
+	cases := map[string]string{
+		teamEndpoint("a/b c"):                  "/v2/teams/a%2Fb%20c",
+		teamMembersEndpoint("a/b c"):           "/v2/teams/a%2Fb%20c/members",
+		teamMemberEndpoint("a/b c", "m/1?x#y"): "/v2/teams/a%2Fb%20c/members/m%2F1%3Fx%23y",
+		teamEndpoint("2f0899e2-2746-4300"):     "/v2/teams/2f0899e2-2746-4300",
+	}
+	for got, want := range cases {
+		if got != want {
+			t.Errorf("endpoint = %q, want %q", got, want)
+		}
+	}
+}
+
+// An escaped "/" must reach the API as %2F, or the API sees one more path
+// segment than the endpoint builder made. This checks the whole path through
+// doRequest and makeRequest, for a write and for a paged list.
+func TestEscapedPathSegmentsReachTheServerIntact(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.EscapedPath())
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+	client := NewAPIClient("key", "org", server.URL)
+	ctx := context.Background()
+
+	if apiErr, diags := client.doRequest(ctx, http.MethodPatch, teamMemberEndpoint("a/b c", "m/1"), map[string]string{"role": "viewer"}, nil, requestOptions{}); diags.HasError() || apiErr != nil {
+		t.Fatalf("unexpected failure: %v %v", diags, apiErr)
+	}
+	if _, apiErr, diags := v2ListAll[teamMemberResponse](ctx, client, teamMembersEndpoint("a/b c"), nil); diags.HasError() || apiErr != nil {
+		t.Fatalf("unexpected failure: %v %v", diags, apiErr)
+	}
+
+	want := []string{"/v2/teams/a%2Fb%20c/members/m%2F1", "/v2/teams/a%2Fb%20c/members"}
+	if len(paths) != len(want) {
+		t.Fatalf("expected %d requests, got %v", len(want), paths)
+	}
+	for i := range want {
+		if paths[i] != want[i] {
+			t.Errorf("request %d reached the server as %q, want %q", i, paths[i], want[i])
+		}
+	}
+}

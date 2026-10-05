@@ -109,3 +109,41 @@ func TestReadTeamByNameReportsAnAPIFailure(t *testing.T) {
 		t.Errorf("a 403 should be reported with the API's detail, got %v", diags)
 	}
 }
+
+func TestTeamNameFilter(t *testing.T) {
+	if got := teamNameFilter("data_eng 100%"); got.Get("name__ilike") != "data_eng 100%" {
+		t.Errorf("a name with only wildcard characters should still be sent as the filter, got %v", got)
+	}
+	if got := teamNameFilter(`ops\infra`); got != nil {
+		t.Errorf("a name with a backslash should send no filter, got %v", got)
+	}
+}
+
+// A backslash may be an escape character in the API's LIKE pattern, so the
+// lookup sends no filter and finds the team in the full list.
+func TestReadTeamByNameSkipsTheFilterForABackslash(t *testing.T) {
+	var queries []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries = append(queries, r.URL.RawQuery)
+		if r.URL.Query().Has("name__ilike") {
+			t.Errorf("no name__ilike filter should be sent, got %q", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[` +
+			`{"id":"t-1","etag":"e","name":"ops","is_all_users":false,"default_member_role":"editor","create_time":"a","update_time":"b"},` +
+			`{"id":"t-2","etag":"e","name":"ops\\infra","is_all_users":false,"default_member_role":"editor","create_time":"a","update_time":"b"}]}`))
+	}))
+	defer server.Close()
+
+	model := teamDataSourceModel{Name: types.StringValue(`ops\infra`)}
+	diags := readTeamByName(context.Background(), NewAPIClient("key", "org", server.URL), &model)
+	if diags.HasError() {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if model.Id.ValueString() != "t-2" {
+		t.Errorf("the exact match in the full list should be returned, got %+v", model)
+	}
+	if len(queries) != 1 {
+		t.Errorf("expected one list request, got %d", len(queries))
+	}
+}

@@ -5,6 +5,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -15,8 +16,11 @@ import (
 // on that surface shares.
 const teamsEndpoint = "/v2/teams"
 
+// teamEndpoint escapes the id as one path segment. A user-supplied id with a
+// "/" or a space then stays one segment, and makeRequest keeps the escaped
+// form intact on the wire.
 func teamEndpoint(id string) string {
-	return fmt.Sprintf("%s/%s", teamsEndpoint, id)
+	return fmt.Sprintf("%s/%s", teamsEndpoint, url.PathEscape(id))
 }
 
 // teamErrors words the failures every v2 resource can hit. A team has no
