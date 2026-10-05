@@ -183,7 +183,9 @@ test-team:
 #   TF_VAR_select_organization_id
 # Optional:
 #   TF_VAR_role_name_prefix    start of the names the suite gives its team, set and group
-#   TF_VAR_role_user_email     the email the suite grants a user role to; not a real user
+#   TF_VAR_role_user_email     the email the suite grants a user role to; not a real user.
+#                              The sweep does not reach the local default; pass it in
+#                              CI_SWEEP_USER_EMAILS to `make test-sweep` to clean it up.
 test-role:
 	@echo "Running role grant tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=role.tftest.hcl
@@ -209,8 +211,9 @@ test-usage-group: test-all
 #   SELECT_API_KEY, SELECT_ORGANIZATION_ID, and optionally SELECT_API_URL
 #   CI_RESOURCE_PREFIX         defaults to terraform-test
 # Optional:
-#   CI_SWEEP_USER_EMAILS       test emails whose direct role grants are deleted,
-#                              for example terraform-test-role-user@example.com
+#   CI_SWEEP_USER_EMAILS       test emails whose direct role grants are deleted;
+#                              only an email that starts with CI_RESOURCE_PREFIX
+#                              is swept. CI sets the role suite's per-run email.
 test-sweep:
 	@echo "Sweeping leftover test connections, budgets, usage group sets, teams and role grants..."
 	./scripts/ci-cleanup-connections.sh

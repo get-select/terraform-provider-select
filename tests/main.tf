@@ -469,8 +469,9 @@ variable "role_name_prefix" {
 }
 
 # The user the suite grants a role to. The API accepts an email that has not
-# signed in. The default is not a real address, and the sweep deletes every
-# direct grant it holds, so do not set this to a real user.
+# signed in. The default is not a real address. CI gives every run its own
+# email and has the sweep delete the direct grants it holds, so do not set this
+# to a real user.
 variable "role_user_email" {
   description = "Email address the role suite grants a user role to"
   type        = string

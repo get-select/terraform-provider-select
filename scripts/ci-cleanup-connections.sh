@@ -21,9 +21,14 @@
 #
 #   - A default role grant on a usage group in a set whose name has the
 #     prefix. The role suite scopes its default grant to its own usage group.
+#     When such a grant cannot be deleted, its set is kept for this run:
+#     without the set, a later sweep cannot tell that the grant is a test's.
 #   - A direct grant to an email in CI_SWEEP_USER_EMAILS whose address starts
-#     with the prefix. That email belongs to no real user, so every direct
-#     grant it holds came from a test.
+#     with the prefix. CI gives the role suite a new email on every run, so
+#     the email belongs to no real user and every direct grant it holds came
+#     from that run. A sweep cannot list the emails of earlier runs, so a grant
+#     that an earlier run leaked stays. That is harmless: it is a grant to an
+#     example.com address that is not a user, and no later run uses the email.
 #
 # A team role grant needs no sweep: deleting the team deletes its grants.
 #
@@ -43,6 +48,10 @@ set -euo pipefail
 API_URL="${SELECT_API_URL:-https://api.select.dev}"
 PREFIX="${CI_RESOURCE_PREFIX:-terraform-test}"
 USER_EMAILS="${CI_SWEEP_USER_EMAILS:-}"
+# Usage group sets that must not be deleted in this run, space-separated with a
+# space at each end. sweep_default_roles adds a set when it could not delete
+# the default role grants on the set's usage groups.
+KEEP_SETS=" "
 
 COLLECTIONS=(
   snowflake-accounts
@@ -99,6 +108,11 @@ sweep_collection() {
     # the list avoids a second GET per connection.
     while IFS=$'\t' read -r id etag name; do
       [[ -n "$id" ]] || continue
+      if [[ "$collection" == "usage-group-sets" && "$KEEP_SETS" == *" ${id} "* ]]; then
+        echo "  ! not deleting ${collection}/${id} (${name}): default role grants on its usage groups remain" >&2
+        failed=$((failed + 1))
+        continue
+      fi
       echo "  - deleting ${collection}/${id} (${name})"
       local del del_status
       del="$(api DELETE "/${collection}/${id}" -H "If-Match: ${etag}")"
@@ -154,7 +168,8 @@ list_items() {
   done
 }
 
-# Delete one item with If-Match, and count the result.
+# Delete one item with If-Match, and count the result. Returns 1 when the
+# delete failed.
 delete_item() {
   local path="$1" etag="$2" label="$3"
   local del del_status
@@ -170,15 +185,21 @@ delete_item() {
   else
     echo "  ! delete failed (HTTP ${del_status}): ${del}" >&2
     failed=$((failed + 1))
+    return 1
   fi
+}
+
+# Keep a usage group set for this run. See KEEP_SETS.
+keep_set() {
+  [[ "$KEEP_SETS" == *" $1 "* ]] || KEEP_SETS="${KEEP_SETS}$1 "
 }
 
 # Delete the default role grants scoped to a usage group in a set whose name
 # has the prefix. This has to run before the usage-group-sets sweep: after the
-# set is gone, nothing tells which grant a test made.
+# set is gone, nothing tells which grant a test made. A set whose grants could
+# not all be deleted, or could not be listed, goes in KEEP_SETS.
 sweep_default_roles() {
-  local sets set_id groups grants
-  local -a group_ids=()
+  local sets set_id groups grants group_sets='{}' all_sets=()
 
   if ! sets="$(list_items /usage-group-sets)"; then
     failed=$((failed + 1))
@@ -186,30 +207,34 @@ sweep_default_roles() {
   fi
   while read -r set_id; do
     [[ -n "$set_id" ]] || continue
+    all_sets+=("$set_id")
     if ! groups="$(list_items "/usage-group-sets/${set_id}/usage-groups" allow-404)"; then
       failed=$((failed + 1))
+      keep_set "$set_id"
       continue
     fi
-    while read -r group_id; do
-      [[ -n "$group_id" ]] && group_ids+=("$group_id")
-    done < <(jq -r '.id' <<<"$groups")
+    # Map each usage group id to its set id.
+    group_sets="$(jq -cn --argjson map "$group_sets" --arg set "$set_id" \
+      '[inputs | {(.id): $set}] | add // {} | $map + .' <<<"$groups")"
   done < <(jq -r --arg prefix "$PREFIX" 'select(.name | startswith($prefix)) | .id' <<<"$sets")
 
-  [[ ${#group_ids[@]} -gt 0 ]] || return 0
+  [[ "$group_sets" != "{}" ]] || return 0
 
   if ! grants="$(list_items /default-roles)"; then
     failed=$((failed + 1))
+    # Any of the sets can hold a grant that was not seen.
+    for set_id in "${all_sets[@]}"; do
+      keep_set "$set_id"
+    done
     return
   fi
-  while IFS=$'\t' read -r id etag role group; do
+  while IFS=$'\t' read -r id etag role group set_id; do
     [[ -n "$id" ]] || continue
-    delete_item "/default-roles/${id}" "$etag" "${role} on usage group ${group}"
-  done < <(jq -r --args '
-      ($ARGS.positional) as $groups
-      | (.usage_group_id // (if .entity.type == "usage_group" then .entity.id else null end)) as $group
-      | select($group != null and any($groups[]; . == $group))
-      | [.id, .etag, .role, $group] | @tsv' \
-    "${group_ids[@]}" <<<"$grants")
+    delete_item "/default-roles/${id}" "$etag" "${role} on usage group ${group}" || keep_set "$set_id"
+  done < <(jq -r --argjson sets "$group_sets" '
+      (.usage_group_id // (if .entity.type == "usage_group" then .entity.id else null end)) as $group
+      | select($group != null and $sets[$group] != null)
+      | [.id, .etag, .role, $group, $sets[$group]] | @tsv' <<<"$grants")
 }
 
 # Delete every direct role grant held by each email in CI_SWEEP_USER_EMAILS

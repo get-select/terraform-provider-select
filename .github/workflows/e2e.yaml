@@ -43,13 +43,13 @@ env:
   # anything else.
   CI_RESOURCE_PREFIX: terraform-test-${{ github.run_id }}
   # The email the role suite grants a user role to. A role grant has no name
-  # to carry the run id, so the sweep deletes the direct grants this email
-  # holds instead. It belongs to no real user, so every one of them is a
-  # test's. The sweep before the matrix removes what an earlier run left; the
-  # sweep after a leg does not, because the email does not start with the
-  # leg's prefix.
-  TF_VAR_role_user_email: terraform-test-role-user@example.com
-  CI_SWEEP_USER_EMAILS: terraform-test-role-user@example.com
+  # to carry the run id, so the email carries it instead: it starts with the
+  # role leg's sweep prefix, and the sweep after that leg deletes the direct
+  # grants it holds. It belongs to no real user, so every one of them is this
+  # run's. No later run uses the email, so a grant that a sweep misses stays
+  # on an address that is not a user, which is harmless.
+  TF_VAR_role_user_email: terraform-test-${{ github.run_id }}-role-user@example.com
+  CI_SWEEP_USER_EMAILS: terraform-test-${{ github.run_id }}-role-user@example.com
 
 jobs:
   # A run cancelled mid-apply leaves connections attached to the organization,

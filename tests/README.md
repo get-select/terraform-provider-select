@@ -98,7 +98,7 @@ variables for the one you want to run.
 | AWS | `aws_connection_name`, `aws_payer_account_id`, `aws_s3_bucket`, `aws_s3_prefix`, `aws_region`, `aws_access_key_id`, `aws_secret_access_key` |
 | Budget | `budget_name` — nothing else; creating a budget makes no call to an external system |
 | Team | `team_name`, and optionally `team_member_email` — the user the suite adds to its team. CI reads it from the `TF_E2E_TEAM_MEMBER_EMAIL` repository variable |
-| Role | `role_name_prefix`, and optionally `role_user_email` — the email the suite grants a user role to. Keep it an address that belongs to no real user: the sweep deletes every direct grant it holds |
+| Role | `role_name_prefix`, and optionally `role_user_email` — the email the suite grants a user role to. Keep it an address that belongs to no real user. CI sets a new one on every run, `terraform-test-<run id>-role-user@example.com` |
 
 One of these is not obvious: **`bigquery_service_account`** is not a credential
 this test holds. Access comes from the SELECT backend impersonating that service
@@ -137,10 +137,14 @@ Two things keep runs from tripping over each other:
 - A role grant has no name to carry the run id. A team role grant goes with its
   team. The script deletes a default role grant only when it is scoped to a
   usage group in a set with the prefix, which is how the role suite scopes its
-  own. It deletes the direct grants of each email in `CI_SWEEP_USER_EMAILS`
-  that starts with the prefix; CI sets it to the role suite's test email. The
-  sweep before the matrix uses the bare prefix and so cleans that email; the
-  sweep after a leg does not.
+  own. If it cannot delete such a grant, it keeps the set for that run, so a
+  later sweep can still find the grant. It deletes the direct grants of each
+  email in `CI_SWEEP_USER_EMAILS` that starts with the prefix. CI gives the
+  role suite a new email on every run, `terraform-test-<run id>-role-user@example.com`,
+  and the sweep after the role leg cleans it. A sweep cannot list the emails
+  of earlier runs, so a grant that one of them leaked stays. That is harmless:
+  the grant is on an example.com address that is not a user, and no later run
+  uses it.
 
 ## Troubleshooting
 
