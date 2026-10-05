@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-team test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-team test-role test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 # The provider is generated from the v2 API's OpenAPI document. specpatch fills
 # in what tfplugingen-openapi cannot produce — dropped descriptions, sensitive
 # attributes, plan modifiers. See tools/specpatch.
@@ -172,26 +172,47 @@ test-team:
 	@echo "Running team tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=team.tftest.hcl
 
+# Role grant tests: select_team_role, select_user_role and select_default_role.
+# Like teams, a role grant makes no call to an external system, so this needs
+# only the API key and organization every other test already uses. The suite
+# makes its own team, usage group set and usage group to grant roles on.
+#
+# Required environment:
+#   TF_VAR_select_api_key      an API key with teams, users, default_roles and
+#                              usage_group_sets read and write scopes
+#   TF_VAR_select_organization_id
+# Optional:
+#   TF_VAR_role_name_prefix    start of the names the suite gives its team, set and group
+#   TF_VAR_role_user_email     the email the suite grants a user role to; not a real user
+test-role:
+	@echo "Running role grant tests..."
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=role.tftest.hcl
+
 # Alias for the e2e workflow, whose matrix runs `make test-${{ matrix.platform }}`
 # for every leg. The usage group suite already runs as part of test-all
 # (provider.tftest.hcl), so this just gives it a matching name rather than
 # splitting it into its own filtered target.
 test-usage-group: test-all
 
-# Remove connections, budgets, usage group sets and teams a failed run left
-# attached to the organization.
+# Remove connections, budgets, usage group sets, teams and role grants a failed
+# run left attached to the organization.
 # `terraform test` tears down what it can, but a run killed mid-apply — or one
 # whose destroy the API refused — leaves a resource behind. A leaked connection
 # then fails the next run outright, on the name already being in use; a leaked
 # budget only accumulates, since SELECT allows budgets to share a name. Safe to
 # run at any time: it only touches resources whose name carries
-# CI_RESOURCE_PREFIX.
+# CI_RESOURCE_PREFIX. A role grant has no name: the script deletes only the
+# default grants on a usage group in a prefixed set, and the direct grants of
+# the test emails in CI_SWEEP_USER_EMAILS.
 #
 # Required environment:
 #   SELECT_API_KEY, SELECT_ORGANIZATION_ID, and optionally SELECT_API_URL
 #   CI_RESOURCE_PREFIX         defaults to terraform-test
+# Optional:
+#   CI_SWEEP_USER_EMAILS       test emails whose direct role grants are deleted,
+#                              for example terraform-test-role-user@example.com
 test-sweep:
-	@echo "Sweeping leftover test connections, budgets, usage group sets and teams..."
+	@echo "Sweeping leftover test connections, budgets, usage group sets, teams and role grants..."
 	./scripts/ci-cleanup-connections.sh
 
 test-clean:
@@ -256,7 +277,8 @@ help:
 	@echo "  test-connections - Run all four connection test suites"
 	@echo "  test-budget      - Run budget tests (needs only an API key; no external system involved)"
 	@echo "  test-team        - Run team tests (needs only an API key; no external system involved)"
-	@echo "  test-sweep       - Delete connections, budgets, usage group sets and teams a failed run left behind"
+	@echo "  test-role        - Run role grant tests (needs only an API key; no external system involved)"
+	@echo "  test-sweep       - Delete connections, budgets, usage group sets, teams and role grants a failed run left behind"
 	@echo "  test-clean       - Clean up test resources and state files"
 	@echo ""
 	@echo "Run individual tests with:"

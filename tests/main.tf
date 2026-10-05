@@ -448,6 +448,49 @@ variable "team_member_role" {
   default     = "editor"
 }
 
+# Role grant test variables.
+#
+# Like teams, a role grant makes no call to an external system. The suite
+# makes its own team, usage group set and usage group to grant roles on, so it
+# needs nothing that only CI or a local operator can supply. It defaults to
+# off so provider.tftest.hcl and `make test`/`test-all` are unaffected.
+variable "enable_role_tests" {
+  description = "Whether to manage a real team role, user role and default role grant"
+  type        = bool
+  default     = false
+}
+
+# The start of every name the suite gives a team, set or group. CI puts the
+# run id in it, so the sweep can find what a failed run left behind.
+variable "role_name_prefix" {
+  description = "Prefix for the names of the team, usage group set and usage group the role suite makes"
+  type        = string
+  default     = "terraform-test-role"
+}
+
+# The user the suite grants a role to. The API accepts an email that has not
+# signed in. The default is not a real address, and the sweep deletes every
+# direct grant it holds, so do not set this to a real user.
+variable "role_user_email" {
+  description = "Email address the role suite grants a user role to"
+  type        = string
+  default     = "terraform-test-role-user@example.com"
+}
+
+variable "user_role_role" {
+  description = "Role of the test user role grant"
+  type        = string
+  default     = "viewer"
+}
+
+# When false, the team role grant moves from the usage group to the whole
+# organization, which has to replace it.
+variable "team_role_on_usage_group" {
+  description = "Whether the test team role grant is scoped to the test usage group"
+  type        = bool
+  default     = true
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -655,6 +698,66 @@ data "select_team" "test" {
   name = select_team.test[0].name
 }
 
+# Role grants: one team role, one user role and one default role. count keeps
+# them out of the way of every other test. The suite makes its own team and
+# usage group, so the grants have something to apply to that no other test
+# uses.
+resource "select_usage_group_set" "role" {
+  count = var.enable_role_tests ? 1 : 0
+
+  name  = "${var.role_name_prefix}-set"
+  order = 1
+}
+
+resource "select_usage_group" "role" {
+  count = var.enable_role_tests ? 1 : 0
+
+  name                   = "${var.role_name_prefix}-group"
+  order                  = 1
+  usage_group_set_id     = select_usage_group_set.role[0].id
+  filter_expression_json = var.simple_filter_expression_json
+}
+
+resource "select_team" "role" {
+  count = var.enable_role_tests ? 1 : 0
+
+  name = "${var.role_name_prefix}-team"
+}
+
+# A usage_group scope accepts only viewer. With team_role_on_usage_group
+# false, the scope is omitted, which means the whole organization.
+resource "select_team_role" "test" {
+  count = var.enable_role_tests ? 1 : 0
+
+  team_id = select_team.role[0].id
+  role    = "viewer"
+  scope = var.team_role_on_usage_group ? {
+    type = "usage_group"
+    id   = select_usage_group.role[0].id
+  } : null
+}
+
+# No scope: the grant applies to the whole organization.
+resource "select_user_role" "test" {
+  count = var.enable_role_tests ? 1 : 0
+
+  email = var.role_user_email
+  role  = var.user_role_role
+}
+
+# Scoped to the suite's own usage group, so the grant gives every member of the
+# test organization access to nothing else. The sweep finds a leaked one by
+# that usage group.
+resource "select_default_role" "test" {
+  count = var.enable_role_tests ? 1 : 0
+
+  role = "viewer"
+  scope = {
+    type = "usage_group"
+    id   = select_usage_group.role[0].id
+  }
+}
+
 # Outputs for verification. one() rather than [0]: these are unconditional, so
 # they're still evaluated — and would error on an out-of-range index — when a
 # connection suite runs with enable_usage_group_tests left at its default false.
@@ -717,4 +820,16 @@ output "team_id" {
 
 output "team_member_id" {
   value = one(select_team_member.test[*].id)
+}
+
+output "team_role_id" {
+  value = one(select_team_role.test[*].id)
+}
+
+output "user_role_id" {
+  value = one(select_user_role.test[*].id)
+}
+
+output "default_role_id" {
+  value = one(select_default_role.test[*].id)
 }

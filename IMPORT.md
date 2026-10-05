@@ -17,6 +17,9 @@ The SELECT Terraform provider supports importing existing resources that were cr
 - `select_budget` - Budgets
 - `select_team` - Teams
 - `select_team_member` - Team Members
+- `select_team_role` - Team Role Grants
+- `select_user_role` - User Role Grants
+- `select_default_role` - Default Role Grants
 
 ## Prerequisites
 
@@ -160,6 +163,26 @@ curl -s https://api.select.dev/v2/teams/$TEAM_ID/members \
   -H "Authorization: Bearer $SELECT_API_KEY" \
   -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, type, identifier, role}'
 ```
+
+### Role Grant IDs
+
+SELECT assigns every role grant ID. List the grants of a team, of a user, or of the whole organization by default, with the API:
+
+```bash
+curl -s https://api.select.dev/v2/teams/$TEAM_ID/roles \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, role, entity}'
+
+curl -s https://api.select.dev/v2/users/alice@example.com/roles \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, role, entity, is_default, granted_from_team_name}'
+
+curl -s https://api.select.dev/v2/default-roles \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, role, entity}'
+```
+
+A user's list holds every role the user has: direct grants, team-inherited grants (`granted_from_team_name` is set) and default grants (`is_default` is `true`). Only a direct grant can be imported as `select_user_role`.
 
 ## Converting Filter Expressions from JSON to Terraform
 
@@ -334,6 +357,50 @@ terraform import select_team_member.alice 2f0899e2-2746-4300-887c-524e64b5a138/7
 ```
 
 **Note**: `role` defaults to `editor`. If the member has a different role in SELECT, set `role` in the configuration before you import, or the first `terraform plan` will show a change.
+
+### Importing a Team Role Grant
+
+A team role grant is addressed through its team, so the import ID holds both IDs, separated by a forward slash.
+
+**Command Format:**
+```bash
+terraform import select_team_role.<resource_name> <team_id>/<role_id>
+```
+
+**Example:**
+```bash
+terraform import select_team_role.analysts_marketing 2f0899e2-2746-4300-887c-524e64b5a138/5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e
+```
+
+**Note**: Set `role` and `scope` in the configuration to what SELECT has on record. A difference forces a new grant on the first `terraform apply` after the import, because the API cannot change a team role grant.
+
+### Importing a User Role Grant
+
+A user role grant is addressed through the user's email address, so the import ID holds the email and the grant ID, separated by a forward slash. The provider splits at the last forward slash.
+
+**Command Format:**
+```bash
+terraform import select_user_role.<resource_name> <email>/<role_id>
+```
+
+**Example:**
+```bash
+terraform import select_user_role.alice_admin alice@example.com/8e9f0a1b-2c3d-4e5f-a6b7-c8d9e0f1a2b3
+```
+
+**Note**: Only a direct grant can be imported. An import of a default or team-inherited grant fails, because the provider treats such a grant as one it does not manage.
+
+### Importing a Default Role Grant
+
+**Command Format:**
+```bash
+terraform import select_default_role.<resource_name> <role_id>
+```
+
+**Example:**
+```bash
+terraform import select_default_role.everyone_views 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+```
 
 ## Step-by-Step Import Process
 

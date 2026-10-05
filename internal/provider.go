@@ -192,5 +192,8 @@ func (p *selectProvider) Resources(ctx context.Context) []func() resource.Resour
 		NewBudgetResource,
 		NewTeamResource,
 		NewTeamMemberResource,
+		NewTeamRoleResource,
+		NewUserRoleResource,
+		NewDefaultRoleResource,
 	}
 }

@@ -1,0 +1,58 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+Each `{{ .Name }}` grants one role directly to one user, on one scope. Grants that Terraform does not manage are not changed.
+
+Omit `scope` to grant the role on the whole organization. To grant it on one resource, set `scope.type` and `scope.id`.
+
+This resource is backed by SELECT's v2 API, at `/v2/users/{email}/roles`.
+
+### Users who have not signed in yet
+
+SELECT keeps a role grant against an email address. The user does not have to exist in SELECT yet: if they have not signed in, the grant takes effect when they first sign in through your identity provider. This is why the provider has no user resource. Users come from your identity provider, and you identify them by email address.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the email address and the grant ID, separated by a forward slash:
+
+```bash
+terraform import {{ .Name }}.example alice@example.com/<role_id>
+```
+
+The provider splits the address at the last forward slash, so an email address that holds a forward slash also works.
+
+To find the grant ID, list the user's roles with the API. Only direct grants can be imported: `is_default` must be `false` and `granted_from_team_name` must be `null`.
+
+```bash
+curl -s https://api.select.dev/v2/users/alice@example.com/roles \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, role, entity, is_default, granted_from_team_name}'
+```
+
+## Additional Information
+
+### Only direct grants
+
+A user can hold a role in three ways: granted to them directly, inherited from a team they belong to, or held by everyone in the organization by default. This resource manages only direct grants. Manage a team's roles with `select_team_role`, and the default roles with `select_default_role`. If the provider reads a grant that is not direct, it treats the grant as gone.
+
+### Only `role` changes in place
+
+A change to `role` is an update. A change to `email` or `scope` revokes the grant and makes a new one.
+
+### A grant that already exists
+
+If SELECT refuses the grant with a conflict, the same role can already be granted to the user on the same scope. Import that grant instead of creating it again.
+
+### Changes made outside Terraform
+
+Every write carries the grant's `etag` as an `If-Match` header, so an update or delete is refused if the grant changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.

@@ -100,7 +100,7 @@ func TestProviderRegistersValidSchemas(t *testing.T) {
 		names["data source "+meta.TypeName] = true
 	}
 
-	for _, want := range []string{"resource select_team", "resource select_team_member", "data source select_team"} {
+	for _, want := range []string{"resource select_team", "resource select_team_member", "resource select_team_role", "resource select_user_role", "resource select_default_role", "data source select_team"} {
 		if !names[want] {
 			t.Errorf("%s should be registered, got %v", want, names)
 		}

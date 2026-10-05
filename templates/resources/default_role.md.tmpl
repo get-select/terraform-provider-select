@@ -1,0 +1,52 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+Each `{{ .Name }}` grants one role to every member of the organization, on one scope. Default grants that Terraform does not manage are not changed. An organization can have no default grants.
+
+Omit `scope` to grant the role on the whole organization. To grant it on one resource, set `scope.type` and `scope.id`.
+
+This resource is backed by SELECT's v2 API, at `/v2/default-roles`.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the grant's ID in SELECT:
+
+```bash
+terraform import {{ .Name }}.example <role_id>
+```
+
+To find the ID, list the default role grants with the API:
+
+```bash
+curl -s https://api.select.dev/v2/default-roles \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, role, entity}'
+```
+
+## Additional Information
+
+### Every change replaces the grant
+
+The API cannot change a default role grant. A change to `role` or `scope` revokes the grant and makes a new one. Every member of the organization loses the role for a short time between the two.
+
+### How the provider reads a grant
+
+The API has no route that returns one default role grant, so the provider lists the default grants and finds this one by its ID. If the grant is not in the list, for example because someone revoked it in the SELECT UI, the next plan grants it again.
+
+### A grant that already exists
+
+If SELECT refuses the grant with a conflict, the same default role can already exist on the same scope. Import that grant instead of creating it again.
+
+### Changes made outside Terraform
+
+A delete carries the grant's `etag` as an `If-Match` header, so it is refused if the grant changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.

@@ -1,0 +1,48 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+Each `{{ .Name }}` grants one role to one team, on one scope. Every member of the team, including the members of an SSO group on the team, holds the role. Grants that Terraform does not manage are not changed.
+
+Omit `scope` to grant the role on the whole organization. To grant it on one resource, set `scope.type` and `scope.id`. A `usage_group` scope accepts only the `viewer` role; the provider rejects any other role on it at plan time.
+
+This resource is backed by SELECT's v2 API, at `/v2/teams/{team_id}/roles`.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the team ID and the grant ID, separated by a forward slash:
+
+```bash
+terraform import {{ .Name }}.example <team_id>/<role_id>
+```
+
+To find the grant ID, list the team's role grants with the API:
+
+```bash
+curl -s https://api.select.dev/v2/teams/$TEAM_ID/roles \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, role, entity}'
+```
+
+## Additional Information
+
+### Every change replaces the grant
+
+The API cannot change a team role grant. A change to `team_id`, `role` or `scope` revokes the grant and makes a new one.
+
+### How the provider reads a grant
+
+The API has no route that returns one team role grant, so the provider lists the team's grants and finds this one by its ID. If the grant is not in the list, for example because someone revoked it in the SELECT UI, the next plan grants it again.
+
+### A grant that already exists
+
+If SELECT refuses the grant with a conflict, the same role can already be granted to the team on the same scope. Import that grant instead of creating it again.
