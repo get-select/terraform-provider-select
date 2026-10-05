@@ -371,13 +371,14 @@ func TestSsoGroupUpdateKeepsTheRenameWhenAGrantFails(t *testing.T) {
 	}
 }
 
-// A revoke that fails after a grant succeeded leaves state with both roles,
-// which is what SELECT holds.
+// A revoke that SELECT refuses after a grant succeeded leaves state with both
+// roles, which is what SELECT holds. A 4xx is a definite refusal, so the
+// tracked progress is saved without a new list.
 func TestSsoGroupUpdateRecordsTheGrantWhenARevokeFails(t *testing.T) {
 	server := newRoutedServer(t, map[string]cannedResponse{
-		"POST /v2/sso-groups/g/roles":         {http.StatusCreated, `{"id":"g-new","role":"editor","entity":{"type":"select_organization","id":"org","display_name":"Org"},"create_time":"x"}`},
-		"GET /v2/sso-groups/g/roles":          {http.StatusOK, `{"items":[` + orgGrant + `]}`},
-		"DELETE /v2/sso-groups/g/roles/g-org": {http.StatusInternalServerError, `{"detail":"boom"}`},
+		"POST /v2/sso-groups/g/roles":         {http.StatusCreated, editorGrant},
+		"GET /v2/sso-groups/g/roles":          {http.StatusOK, `{"items":[` + orgGrant + `,` + editorGrant + `]}`},
+		"DELETE /v2/sso-groups/g/roles/g-org": {http.StatusConflict, `{"detail":"last role"}`},
 	})
 	state := ssoGroupState(t, "g", "e-1", ssoRole("admin", nullScope()))
 	plan := ssoGroupPlan(t, "g", ssoRole("editor", nullScope()))
@@ -395,6 +396,82 @@ func TestSsoGroupUpdateRecordsTheGrantWhenARevokeFails(t *testing.T) {
 	}
 	if got.Etag.ValueString() != "e-1" {
 		t.Errorf("no step read a new ETag, so state keeps the old one for Read to refresh, got %v", got.Etag)
+	}
+	if n := len(server.requests); n != 3 {
+		t.Errorf("a definite refusal should not list the roles again, got %v", server.calls())
+	}
+}
+
+// A grant that SELECT made but answered with a 500. The provider lists the
+// grants again, and state holds what SELECT lists, not what it assumed.
+func TestSsoGroupUpdateRelistsAfterAnAmbiguousGrant(t *testing.T) {
+	server := newRoutedServer(t, map[string]cannedResponse{
+		"POST /v2/sso-groups/g/roles": {http.StatusInternalServerError, `{"detail":"boom"}`},
+		"GET /v2/sso-groups/g/roles":  {http.StatusOK, `{"items":[` + orgGrant + `,` + editorGrant + `]}`},
+	})
+	state := ssoGroupState(t, "g", "e-1", ssoRole("admin", nullScope()))
+	plan := ssoGroupPlan(t, "g", ssoRole("editor", scopeObject(t, "organization", types.StringNull())))
+
+	resp, got := updateSsoGroup(t, server.URL, plan, state)
+	if !resp.Diagnostics.HasError() || !strings.Contains(resp.Diagnostics[0].Detail(), "grant a role to the SSO group") {
+		t.Fatalf("the failed grant should be an error, got %v", resp.Diagnostics)
+	}
+	// The listed editor grant pairs with the planned element, so it keeps
+	// the planned explicit organization scope.
+	want := ssoRolesSet(t, ssoRole("admin", nullScope()), ssoRole("editor", scopeObject(t, "organization", types.StringNull())))
+	if !got.Roles.Equal(want) {
+		t.Errorf("state should hold the grants SELECT lists\n got: %v\nwant: %v", got.Roles, want)
+	}
+
+	// The grant did not happen after all.
+	server = newRoutedServer(t, map[string]cannedResponse{
+		"POST /v2/sso-groups/g/roles": {http.StatusInternalServerError, `{"detail":"boom"}`},
+		"GET /v2/sso-groups/g/roles":  {http.StatusOK, `{"items":[` + orgGrant + `]}`},
+	})
+	_, got = updateSsoGroup(t, server.URL, plan, state)
+	if !got.Roles.Equal(state.Roles) {
+		t.Errorf("state should hold only the grant SELECT lists, got %v", got.Roles)
+	}
+
+	// The list fails too: the tracked progress stays, which is the state
+	// before the grant.
+	server = newRoutedServer(t, map[string]cannedResponse{
+		"POST /v2/sso-groups/g/roles": {http.StatusInternalServerError, `{"detail":"boom"}`},
+		"GET /v2/sso-groups/g/roles":  {http.StatusServiceUnavailable, `{"detail":"down"}`},
+	})
+	_, got = updateSsoGroup(t, server.URL, plan, state)
+	if !got.Roles.Equal(state.Roles) {
+		t.Errorf("state should keep the tracked roles when the list fails, got %v", got.Roles)
+	}
+}
+
+// A revoke that SELECT made but answered with a 500. State holds what SELECT
+// lists after it: the revoked role is gone.
+func TestSsoGroupUpdateRelistsAfterAnAmbiguousRevoke(t *testing.T) {
+	server := newRoutedServer(t, map[string]cannedResponse{
+		"POST /v2/sso-groups/g/roles":         {http.StatusCreated, editorGrant},
+		"GET /v2/sso-groups/g/roles#1":        {http.StatusOK, `{"items":[` + orgGrant + `,` + editorGrant + `]}`},
+		"DELETE /v2/sso-groups/g/roles/g-org": {http.StatusInternalServerError, `{"detail":"boom"}`},
+		"GET /v2/sso-groups/g/roles#2":        {http.StatusOK, `{"items":[` + editorGrant + `]}`},
+	})
+	state := ssoGroupState(t, "g", "e-1", ssoRole("admin", nullScope()))
+	plan := ssoGroupPlan(t, "g", ssoRole("editor", nullScope()))
+
+	resp, got := updateSsoGroup(t, server.URL, plan, state)
+	if !resp.Diagnostics.HasError() || !strings.Contains(resp.Diagnostics[0].Detail(), "revoke a role from the SSO group") {
+		t.Fatalf("the failed revoke should be an error, got %v", resp.Diagnostics)
+	}
+	want := []string{
+		"POST /v2/sso-groups/g/roles",
+		"GET /v2/sso-groups/g/roles",
+		"DELETE /v2/sso-groups/g/roles/g-org",
+		"GET /v2/sso-groups/g/roles",
+	}
+	if strings.Join(server.calls(), "\n") != strings.Join(want, "\n") {
+		t.Errorf("requests\n got: %v\nwant: %v", server.calls(), want)
+	}
+	if !got.Roles.Equal(plan.Roles) {
+		t.Errorf("state should hold only the grant SELECT lists, got %v", got.Roles)
 	}
 }
 

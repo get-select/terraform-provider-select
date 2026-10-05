@@ -268,32 +268,34 @@ func ssoGroupRolesSet(ctx context.Context, roles []ssoGroupRole) (types.Set, dia
 	return types.SetValueFrom(ctx, ssoGroupRoleObjectType(), models)
 }
 
-// ssoGroupRolesValue builds the roles set from the grants the API listed. The
-// list is authoritative: a grant made outside Terraform is in the set, so the
-// next plan shows it as drift.
+// ssoGroupRolesFromGrants builds the roles from the grants the API listed.
+// The list is authoritative: a grant made outside Terraform is in the result,
+// so the next plan shows it as drift.
 //
-// configured is the roles set that state holds. Each grant is paired with the
-// configured element that has the same key, so that roleGrantScopeValue keeps
-// the configured scope: a null scope stays null for an organization grant,
-// and the scope id keeps its configured case. A grant with no configured
-// element, as after `terraform import`, gets a null scope for the
-// organization. Two grants with the same key give one element, because a set
-// cannot hold the same value twice, and a warning.
-func ssoGroupRolesValue(ctx context.Context, configured []ssoGroupRole, grants []ssoGroupRoleResponse) (types.Set, diag.Diagnostics) {
+// configured holds the elements that the plan or state holds. Each grant is
+// paired with the first configured element that has the same key, so that
+// roleGrantScopeValue keeps the configured scope: a null scope stays null for
+// an organization grant, and the scope id keeps its configured case. A grant
+// with no configured element, as after `terraform import`, gets a null scope
+// for the organization. Two grants with the same key give one element,
+// because a set cannot hold the same value twice, and a warning.
+func ssoGroupRolesFromGrants(ctx context.Context, configured []ssoGroupRole, grants []ssoGroupRoleResponse) ([]ssoGroupRole, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	byKey := make(map[ssoGroupRoleKey]ssoGroupRoleModel, len(configured))
 	for _, role := range configured {
-		byKey[role.key] = role.model
+		if _, ok := byKey[role.key]; !ok {
+			byKey[role.key] = role.model
+		}
 	}
 
 	seen := map[ssoGroupRoleKey]bool{}
-	models := make([]ssoGroupRoleModel, 0, len(grants))
+	roles := make([]ssoGroupRole, 0, len(grants))
 	for i := range grants {
 		grant := &grants[i]
 		key, err := ssoGroupGrantKey(grant)
 		if err != nil {
 			diags.AddError("Unexpected Role Grant Scope", err.Error())
-			return types.SetNull(ssoGroupRoleObjectType()), diags
+			return nil, diags
 		}
 		if seen[key] {
 			diags.AddWarning("Duplicate SSO Group Role",
@@ -311,12 +313,27 @@ func ssoGroupRolesValue(ctx context.Context, configured []ssoGroupRole, grants [
 		scope, d := roleGrantScopeValue(ctx, configuredScope, grant.roleGrantScopeFields)
 		diags.Append(d...)
 		if diags.HasError() {
-			return types.SetNull(ssoGroupRoleObjectType()), diags
+			return nil, diags
 		}
-		models = append(models, ssoGroupRoleModel{Role: types.StringValue(grant.Role), Scope: scope})
+		model := ssoGroupRoleModel{Role: types.StringValue(grant.Role), Scope: scope}
+		payload, d := buildRoleGrantCreate(ctx, model.Role, model.Scope)
+		diags.Append(d...)
+		if diags.HasError() {
+			return nil, diags
+		}
+		roles = append(roles, ssoGroupRole{model: model, payload: *payload, key: key})
 	}
+	return roles, diags
+}
 
-	set, d := types.SetValueFrom(ctx, ssoGroupRoleObjectType(), models)
+// ssoGroupRolesValue builds the roles set from the grants the API listed. See
+// ssoGroupRolesFromGrants.
+func ssoGroupRolesValue(ctx context.Context, configured []ssoGroupRole, grants []ssoGroupRoleResponse) (types.Set, diag.Diagnostics) {
+	roles, diags := ssoGroupRolesFromGrants(ctx, configured, grants)
+	if diags.HasError() {
+		return types.SetNull(ssoGroupRoleObjectType()), diags
+	}
+	set, d := ssoGroupRolesSet(ctx, roles)
 	diags.Append(d...)
 	return set, diags
 }

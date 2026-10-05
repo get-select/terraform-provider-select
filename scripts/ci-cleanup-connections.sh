@@ -263,8 +263,10 @@ sweep_user_roles() {
 
 # Delete every SSO group whose name starts with the prefix. The group's id is
 # its name, which can hold a "/" or a space, so the id is escaped as one path
-# segment. Deleting a group also deletes its role grants. This runs after the
-# teams sweep, because a team can hold the group as a member.
+# segment. Deleting a group also deletes its role grants. This has to run
+# before the usage-group-sets sweep, as sweep_default_roles does: a test
+# group's grant can be scoped to a usage group in a test set, and that grant
+# can block the delete of the set.
 sweep_sso_groups() {
   local groups escaped
 
@@ -284,12 +286,12 @@ echo "default-roles:"
 sweep_default_roles
 echo "user roles:"
 sweep_user_roles
+echo "sso-groups:"
+sweep_sso_groups
 for collection in "${COLLECTIONS[@]}"; do
   echo "${collection}:"
   sweep_collection "$collection"
 done
-echo "sso-groups:"
-sweep_sso_groups
 
 echo "Sweep complete: ${deleted} deleted, ${failed} failed."
 # A leak left behind breaks the next run, so it fails the step rather than being

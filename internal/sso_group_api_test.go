@@ -69,6 +69,7 @@ func keysOf(roles []ssoGroupRole) []string {
 
 const (
 	orgGrant     = `{"id":"g-org","role":"admin","entity":{"type":"select_organization","id":"org","display_name":"Org"},"create_time":"x"}`
+	editorGrant  = `{"id":"g-ed","role":"editor","entity":{"type":"select_organization","id":"org","display_name":"Org"},"create_time":"x"}`
 	monitorGrant = `{"id":"g-mon","role":"monitor_editor","entity":{"type":"select_organization","id":"org","display_name":"Org"},"create_time":"x"}`
 	groupGrant   = `{"id":"g-ug","role":"viewer","usage_group_id":"ug-1","entity":{"type":"usage_group","id":"ug-1","display_name":"Set: Group"},"create_time":"x"}`
 )

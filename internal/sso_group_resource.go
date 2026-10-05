@@ -342,11 +342,31 @@ func (r *ssoGroupResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 	id := progress.model.Id.ValueString()
 
+	// relist replaces the tracked roles with the roles SELECT lists, after a
+	// grant or a revoke that failed but can still have happened. The listed
+	// grants are paired with the state elements first, then with the planned
+	// ones, the same as the tracked progress. If the list fails, the tracked
+	// roles stay.
+	relist := func() {
+		grants, apiErr, diags := r.listRoles(ctx, id)
+		if diags.HasError() || apiErr != nil {
+			return
+		}
+		roles, diags := ssoGroupRolesFromGrants(ctx, append(append([]ssoGroupRole{}, stateRoles...), planRoles...), grants)
+		if diags.HasError() {
+			return
+		}
+		progress.roles = roles
+	}
+
 	// 2. Grant.
 	for _, role := range add {
 		var granted ssoGroupRoleResponse
 		apiErr, diags := r.client.doRequest(ctx, http.MethodPost, ssoGroupRolesEndpoint(id), role.payload, &granted, requestOptions{})
 		if diags.HasError() || apiErr != nil {
+			if ambiguousWrite(apiErr) {
+				relist()
+			}
 			fail(ssoGroupOpGrant, apiErr, diags)
 			return
 		}
@@ -366,6 +386,9 @@ func (r *ssoGroupResource) Update(ctx context.Context, req resource.UpdateReques
 			for _, grant := range ssoGroupGrantsFor(role.key, grants) {
 				apiErr, diags := r.client.doRequest(ctx, http.MethodDelete, ssoGroupRoleEndpoint(id, grant.Id), nil, nil, requestOptions{})
 				if diags.HasError() || (apiErr != nil && apiErr.StatusCode != http.StatusNotFound) {
+					if ambiguousWrite(apiErr) {
+						relist()
+					}
 					fail(ssoGroupOpRevoke, apiErr, diags)
 					return
 				}

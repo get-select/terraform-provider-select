@@ -152,7 +152,7 @@ SELECT cannot change a role grant. A change to `roles` grants each new role and 
 
 A change to `name` renames the group in place, and SELECT keeps its roles. The group's ID is its name, so `id` changes too. A `select_team_member` that refers to the group by its name is replaced, because its `identifier` changes.
 
-If a later step of the same apply fails, state still holds the new name. If the rename request itself fails with a server error or no response, the provider reads the group at the old and the new name. State holds the new name only if the old name is gone and a group is at the new name. State also holds the roles that SELECT holds after the steps that succeeded, so the next plan shows only the changes that remain.
+If a later step of the same apply fails, state still holds the new name. If the rename request itself fails with a server error or no response, the provider reads the group at the old and the new name. State holds the new name only if the old name is gone and a group is at the new name. State also holds the roles that SELECT holds after the steps that succeeded, so the next plan shows only the changes that remain. If a grant or a revoke fails with a server error or no response, it can still have happened, so the provider lists the group's roles again and state holds what SELECT lists.
 
 ### Changes made outside Terraform
 
