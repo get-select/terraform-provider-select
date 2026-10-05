@@ -142,6 +142,8 @@ The provider reads every role of the group from SELECT. A role granted to the gr
 
 After an update, the provider lists the group's roles again. If they changed outside Terraform during the apply, the provider shows a warning, and the next plan shows the difference. If SELECT holds the same role on the same scope more than once, the set shows it once, with a warning.
 
+The group's team memberships are managed by `select_team_member` and are not part of `roles`. SELECT lists them with the group's roles, and the provider ignores them.
+
 Two elements cannot grant the same `role` on the same scope. The provider compares scope IDs without case, and an omitted `scope` is the same as `scope.type = "organization"`.
 
 ### How a change is applied

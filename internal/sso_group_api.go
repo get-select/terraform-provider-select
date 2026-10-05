@@ -189,6 +189,27 @@ func ssoGroupRolesFromSet(ctx context.Context, set types.Set) ([]ssoGroupRole, d
 	return roles, diags
 }
 
+// ssoGroupTeamEntity is the entity type of a team. See ssoGroupManagedGrants.
+const ssoGroupTeamEntity = "team"
+
+// ssoGroupManagedGrants returns the listed grants that the roles set manages.
+//
+// The roles list of an SSO group also holds the group's team memberships: a
+// grant whose entity is the team. select_team_member manages a membership,
+// and a RoleGrantScope cannot express a team, so such a grant is not a role
+// of the roles set. It is removed here, before any other use of the list.
+// Thus Read does not show it, an update never revokes it, and it does not
+// count as a duplicate or as drift.
+func ssoGroupManagedGrants(grants []ssoGroupRoleResponse) []ssoGroupRoleResponse {
+	managed := make([]ssoGroupRoleResponse, 0, len(grants))
+	for _, grant := range grants {
+		if grant.Entity.Type != ssoGroupTeamEntity {
+			managed = append(managed, grant)
+		}
+	}
+	return managed
+}
+
 // ssoGroupGrantKey is the key of a grant the API listed. It fails for a scope
 // type that this provider does not know.
 func ssoGroupGrantKey(grant *ssoGroupRoleResponse) (ssoGroupRoleKey, error) {

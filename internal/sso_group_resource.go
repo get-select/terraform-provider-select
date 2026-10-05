@@ -159,9 +159,16 @@ func (r *ssoGroupResource) getGroup(ctx context.Context, id string) (*ssoGroupRe
 	return &response, nil, nil
 }
 
-// listRoles returns every grant of the group, from all pages.
+// listRoles returns the grants of the group that the roles set manages, from
+// all pages. See ssoGroupManagedGrants. Every use of the list goes through
+// here: Read, the revoke matching, the relist after an ambiguous write, and
+// the list after an update.
 func (r *ssoGroupResource) listRoles(ctx context.Context, id string) ([]ssoGroupRoleResponse, *apiError, diag.Diagnostics) {
-	return v2ListAll[ssoGroupRoleResponse](ctx, r.client, ssoGroupRolesEndpoint(id), nil)
+	grants, apiErr, diags := v2ListAll[ssoGroupRoleResponse](ctx, r.client, ssoGroupRolesEndpoint(id), nil)
+	if diags.HasError() || apiErr != nil {
+		return nil, apiErr, diags
+	}
+	return ssoGroupManagedGrants(grants), nil, nil
 }
 
 // Create sends the name and every role in one request. The API requires at

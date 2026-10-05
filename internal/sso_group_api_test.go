@@ -389,3 +389,11 @@ func TestSsoGroupEndpointsEscapeTheName(t *testing.T) {
 		t.Errorf("ssoGroupRoleEndpoint = %q", got)
 	}
 }
+
+func TestSsoGroupManagedGrantsDropsTeamMemberships(t *testing.T) {
+	grants := ssoGrants(t, `[`+orgGrant+`,{"id":"g-team","role":"viewer","entity":{"type":"team","id":"t-1","display_name":"Team"},"create_time":"x"}]`)
+	managed := ssoGroupManagedGrants(grants)
+	if len(managed) != 1 || managed[0].Id != "g-org" {
+		t.Errorf("only the organization grant is a managed role, got %+v", managed)
+	}
+}

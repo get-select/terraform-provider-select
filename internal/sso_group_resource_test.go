@@ -623,3 +623,50 @@ func TestSsoGroupIdFromName(t *testing.T) {
 		t.Errorf("an unknown name should leave id unknown, got %v", resp.PlanValue)
 	}
 }
+
+// teamGrant is how the roles list shows the group's membership of a team.
+const teamGrant = `{"id":"g-team","role":"viewer","entity":{"type":"team","id":"t-1","display_name":"Analysts"},"create_time":"x"}`
+
+// The roles list also holds the group's team memberships, as grants on a
+// team. select_team_member manages those, so Read does not show them and an
+// update never revokes them.
+func TestSsoGroupIgnoresTeamMembershipGrants(t *testing.T) {
+	server := newRoutedServer(t, map[string]cannedResponse{
+		"GET /v2/sso-groups/g":       {http.StatusOK, groupJSON("g", "e-1")},
+		"GET /v2/sso-groups/g/roles": {http.StatusOK, `{"items":[` + teamGrant + `,` + orgGrant + `,` + groupGrant + `,` + teamGrant + `]}`},
+	})
+	state := ssoGroupState(t, "g", "e-1",
+		ssoRole("admin", nullScope()),
+		ssoRole("viewer", scopeObject(t, "usage_group", types.StringValue("ug-1"))),
+	)
+	resp, got := readSsoGroup(t, server.URL, state)
+	if len(resp.Diagnostics) != 0 {
+		t.Fatalf("a team membership should be neither an error nor a duplicate warning, got %v", resp.Diagnostics)
+	}
+	if !got.Roles.Equal(state.Roles) {
+		t.Errorf("Read should give only the managed roles\n got: %v\nwant: %v", got.Roles, state.Roles)
+	}
+
+	// The update removes the viewer role, which is on the same role as the
+	// team membership. Only the usage group grant is revoked, and the team
+	// membership is not drift after the update.
+	server = newRoutedServer(t, map[string]cannedResponse{
+		"GET /v2/sso-groups/g/roles#1":       {http.StatusOK, `{"items":[` + teamGrant + `,` + orgGrant + `,` + groupGrant + `]}`},
+		"DELETE /v2/sso-groups/g/roles/g-ug": {http.StatusNoContent, ""},
+		"GET /v2/sso-groups/g":               {http.StatusOK, groupJSON("g", "e-2")},
+		"GET /v2/sso-groups/g/roles#2":       {http.StatusOK, `{"items":[` + teamGrant + `,` + orgGrant + `]}`},
+	})
+	plan := ssoGroupPlan(t, "g", ssoRole("admin", nullScope()))
+	updated, got := updateSsoGroup(t, server.URL, plan, state)
+	if len(updated.Diagnostics) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", updated.Diagnostics)
+	}
+	for _, call := range server.calls() {
+		if call == "DELETE /v2/sso-groups/g/roles/g-team" {
+			t.Error("an update must never revoke a team membership")
+		}
+	}
+	if !got.Roles.Equal(plan.Roles) {
+		t.Errorf("state should hold the planned roles, got %v", got.Roles)
+	}
+}
