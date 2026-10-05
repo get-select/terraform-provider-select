@@ -158,7 +158,7 @@ If a later step of the same apply fails, state still holds the new name. If the 
 
 ### Changes made outside Terraform
 
-A rename and a delete carry the group's `etag` as an `If-Match` header, so SELECT refuses them if the group changed since Terraform last read it. A role change also changes the `etag`. When SELECT refuses a write for this reason, run `terraform apply -refresh-only` to pick up the current state and then apply again.
+A rename and a delete carry the group's `etag` as an `If-Match` header, so SELECT refuses them if the group changed since Terraform last read it. A role change also changes the `etag`, and so does a change to the group's team memberships. In one apply, Terraform can replace a `select_team_member` that refers to the group before it renames or deletes the group. If SELECT then refuses the rename or the delete, the provider reads the group. When the group's name and roles are still the ones in state, the provider sends the request once more with the new `etag`. When SELECT refuses a write because the name or the roles changed, run `terraform apply -refresh-only` to pick up the current state and then apply again.
 
 `create_time` is the time that SELECT granted the group's earliest role, so it can change when that role is revoked.
 

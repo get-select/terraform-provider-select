@@ -321,13 +321,12 @@ func (r *ssoGroupResource) Update(ctx context.Context, req resource.UpdateReques
 	}
 
 	// 1. Rename. The If-Match is the ETag from the last read, so a change
-	// made outside Terraform since then fails the rename with a 412.
+	// made outside Terraform since then fails the rename with a 412. See
+	// writeGroup for the one retry.
 	if !plan.Name.Equal(state.Name) {
 		var renamed ssoGroupResponse
-		apiErr, diags := r.client.doRequest(ctx, http.MethodPatch, ssoGroupEndpoint(state.Id.ValueString()),
-			ssoGroupUpdatePayload{Name: plan.Name.ValueString()}, &renamed, requestOptions{
-				headers: ifMatchHeader(state.Etag),
-			})
+		apiErr, diags := r.writeGroup(ctx, http.MethodPatch, &state, stateRoles,
+			ssoGroupUpdatePayload{Name: plan.Name.ValueString()}, &renamed)
 		if diags.HasError() || apiErr != nil {
 			// A lost response or a server error does not prove that the rename
 			// did not happen. If it did, state must point at the new URL, or
@@ -442,6 +441,49 @@ func (r *ssoGroupResource) Update(ctx context.Context, req resource.UpdateReques
 	resp.Diagnostics.Append(resp.State.Set(ctx, &updated)...)
 }
 
+// writeGroup sends a rename or a delete of the group with If-Match from
+// state. On a 412 it retries once, with a fresh ETag, when nothing that this
+// resource manages has changed since state was read. See
+// ssoGroupUnchangedSince.
+//
+// A change to the group's team memberships also changes the group's ETag.
+// In the same apply, Terraform can replace a select_team_member that refers to
+// the group, and it destroys the old member before it renames or deletes the
+// group. The ETag in state is then stale because of this apply, not because
+// of an outside change. This is the same idea as a usage group set, whose
+// ETag a recorded version changes (see selfInflicted412). A 412 after a real
+// change to the group's name or roles still reaches the user. A second 412
+// is returned as it is, so there is no loop.
+func (r *ssoGroupResource) writeGroup(ctx context.Context, method string, state *ssoGroupModel, stateRoles []ssoGroupRole, request any, response any) (*apiError, diag.Diagnostics) {
+	endpoint := ssoGroupEndpoint(state.Id.ValueString())
+	apiErr, diags := r.client.doRequest(ctx, method, endpoint, request, response, requestOptions{
+		headers: ifMatchHeader(state.Etag),
+	})
+	if diags.HasError() || apiErr == nil || apiErr.StatusCode != http.StatusPreconditionFailed {
+		return apiErr, diags
+	}
+
+	group, getErr, getDiags := r.getGroup(ctx, state.Id.ValueString())
+	if getDiags.HasError() || getErr != nil {
+		return apiErr, diags
+	}
+	grants, listErr, listDiags := r.listRoles(ctx, group.Id)
+	if listDiags.HasError() || listErr != nil {
+		return apiErr, diags
+	}
+	if !ssoGroupUnchangedSince(ctx, state, stateRoles, group, grants) {
+		return apiErr, diags
+	}
+
+	tflog.Debug(ctx, "SSO group ETag changed, but its name and roles did not; retrying with the fresh ETag", map[string]interface{}{
+		"method": method,
+		"path":   endpoint,
+	})
+	return r.client.doRequest(ctx, method, endpoint, request, response, requestOptions{
+		headers: ifMatchHeader(types.StringValue(group.Etag)),
+	})
+}
+
 // renamedGroup returns the group at newId when a rename from oldId is known
 // to have happened: the old URL answers 404 and the new URL holds a group. A
 // group at the new URL alone proves nothing, because another group can have
@@ -472,9 +514,13 @@ func (r *ssoGroupResource) Delete(ctx context.Context, req resource.DeleteReques
 		return
 	}
 
-	apiErr, diags := r.client.doRequest(ctx, http.MethodDelete, ssoGroupEndpoint(state.Id.ValueString()), nil, nil, requestOptions{
-		headers: ifMatchHeader(state.Etag),
-	})
+	stateRoles, diags := ssoGroupRolesFromSet(ctx, state.Roles)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	apiErr, diags := r.writeGroup(ctx, http.MethodDelete, &state, stateRoles, nil, nil)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return

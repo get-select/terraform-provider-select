@@ -14,6 +14,7 @@ import (
 
 	"terraform-provider-select/internal/provider/resource_sso_group"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -475,24 +476,183 @@ func TestSsoGroupUpdateRelistsAfterAnAmbiguousRevoke(t *testing.T) {
 	}
 }
 
-// A 412 on the rename means the group changed outside Terraform. Nothing
-// else is sent, and state stays as it was.
-func TestSsoGroupUpdateStopsWhenTheRenameFails(t *testing.T) {
-	server := newRoutedServer(t, map[string]cannedResponse{
-		"PATCH /v2/sso-groups/old": {http.StatusPreconditionFailed, `{"detail":"stale"}`},
-	})
-	state := ssoGroupState(t, "old", "e-1", ssoRole("admin", nullScope()))
-	plan := ssoGroupPlan(t, "new", ssoRole("editor", nullScope()))
+// A 412 on the rename or the delete. When SELECT still holds the state's name
+// and roles, the ETag changed only because of something this resource does
+// not manage, such as a team membership that the same apply replaced. The
+// write is then sent once more with the fresh ETag. When the name or the roles
+// changed, the 412 reaches the user and nothing is retried.
+func TestSsoGroupRetriesA412OnlyWhenNothingManagedChanged(t *testing.T) {
+	stale := cannedResponse{http.StatusPreconditionFailed, `{"detail":"The If-Match header does not match the resource's current ETag."}`}
+	sameRoles := cannedResponse{http.StatusOK, `{"items":[` + teamGrant + `,` + orgGrant + `,` + groupGrant + `]}`}
+	otherRoles := cannedResponse{http.StatusOK, `{"items":[` + orgGrant + `,` + groupGrant + `,` + editorGrant + `]}`}
+	// The state's scope id is in upper case. SELECT lists it in lower case,
+	// which is the same grant.
+	state := ssoGroupState(t, "old", "e-1",
+		ssoRole("admin", nullScope()),
+		ssoRole("viewer", scopeObject(t, "usage_group", types.StringValue("UG-1"))),
+	)
 
-	resp, got := updateSsoGroup(t, server.URL, plan, state)
-	if !resp.Diagnostics.HasError() || resp.Diagnostics[0].Summary() != "SSO Group Changed Outside Terraform" {
-		t.Fatalf("a 412 should say the group changed outside Terraform, got %v", resp.Diagnostics)
+	type outcome struct {
+		wantErr   bool
+		wantCalls []string
 	}
-	if len(server.requests) != 1 {
-		t.Errorf("nothing should follow a failed rename, got %v", server.calls())
+	retried := func(write string) outcome {
+		return outcome{false, []string{write, "GET /v2/sso-groups/old", "GET /v2/sso-groups/old/roles", write}}
 	}
-	if got.Id.ValueString() != "old" || !got.Roles.Equal(state.Roles) {
-		t.Errorf("state should stay as it was, got %+v", got)
+	refused := func(write string) outcome {
+		return outcome{true, []string{write, "GET /v2/sso-groups/old", "GET /v2/sso-groups/old/roles"}}
+	}
+
+	cases := []struct {
+		name   string
+		write  string
+		routes map[string]cannedResponse
+		want   outcome
+	}{
+		{
+			name:  "rename, nothing managed changed",
+			write: "PATCH /v2/sso-groups/old",
+			routes: map[string]cannedResponse{
+				"PATCH /v2/sso-groups/old#1":   stale,
+				"PATCH /v2/sso-groups/old#2":   {http.StatusOK, groupJSON("new", "e-3")},
+				"GET /v2/sso-groups/old":       {http.StatusOK, groupJSON("old", "e-2")},
+				"GET /v2/sso-groups/old/roles": sameRoles,
+				"GET /v2/sso-groups/new":       {http.StatusOK, groupJSON("new", "e-4")},
+				"GET /v2/sso-groups/new/roles": sameRoles,
+			},
+			want: outcome{false, []string{
+				"PATCH /v2/sso-groups/old", "GET /v2/sso-groups/old", "GET /v2/sso-groups/old/roles",
+				"PATCH /v2/sso-groups/old", "GET /v2/sso-groups/new", "GET /v2/sso-groups/new/roles",
+			}},
+		},
+		{
+			name:  "rename, roles changed",
+			write: "PATCH /v2/sso-groups/old",
+			routes: map[string]cannedResponse{
+				"PATCH /v2/sso-groups/old":     stale,
+				"GET /v2/sso-groups/old":       {http.StatusOK, groupJSON("old", "e-2")},
+				"GET /v2/sso-groups/old/roles": otherRoles,
+			},
+			want: refused("PATCH /v2/sso-groups/old"),
+		},
+		{
+			name:  "rename, the retry gets a second 412",
+			write: "PATCH /v2/sso-groups/old",
+			routes: map[string]cannedResponse{
+				"PATCH /v2/sso-groups/old":     stale,
+				"GET /v2/sso-groups/old":       {http.StatusOK, groupJSON("old", "e-2")},
+				"GET /v2/sso-groups/old/roles": sameRoles,
+			},
+			want: outcome{true, retried("PATCH /v2/sso-groups/old").wantCalls},
+		},
+		{
+			name:  "delete, nothing managed changed",
+			write: "DELETE /v2/sso-groups/old",
+			routes: map[string]cannedResponse{
+				"DELETE /v2/sso-groups/old#1":  stale,
+				"DELETE /v2/sso-groups/old#2":  {http.StatusNoContent, ""},
+				"GET /v2/sso-groups/old":       {http.StatusOK, groupJSON("old", "e-2")},
+				"GET /v2/sso-groups/old/roles": sameRoles,
+			},
+			want: retried("DELETE /v2/sso-groups/old"),
+		},
+		{
+			name:  "delete, roles changed",
+			write: "DELETE /v2/sso-groups/old",
+			routes: map[string]cannedResponse{
+				"DELETE /v2/sso-groups/old":    stale,
+				"GET /v2/sso-groups/old":       {http.StatusOK, groupJSON("old", "e-2")},
+				"GET /v2/sso-groups/old/roles": otherRoles,
+			},
+			want: refused("DELETE /v2/sso-groups/old"),
+		},
+		{
+			name:  "delete, the retry gets a second 412",
+			write: "DELETE /v2/sso-groups/old",
+			routes: map[string]cannedResponse{
+				"DELETE /v2/sso-groups/old":    stale,
+				"GET /v2/sso-groups/old":       {http.StatusOK, groupJSON("old", "e-2")},
+				"GET /v2/sso-groups/old/roles": sameRoles,
+			},
+			want: outcome{true, retried("DELETE /v2/sso-groups/old").wantCalls},
+		},
+	}
+
+	for _, c := range cases {
+		server := newRoutedServer(t, c.routes)
+		var diags diag.Diagnostics
+		var got ssoGroupModel
+		if strings.HasPrefix(c.write, "PATCH") {
+			plan := ssoGroupPlan(t, "new",
+				ssoRole("admin", nullScope()),
+				ssoRole("viewer", scopeObject(t, "usage_group", types.StringValue("UG-1"))),
+			)
+			var resp resource.UpdateResponse
+			resp, got = updateSsoGroup(t, server.URL, plan, state)
+			diags = resp.Diagnostics
+		} else {
+			r := newSsoGroupForTest(server.URL)
+			s := ssoGroupResourceSchema(context.Background())
+			resp := resource.DeleteResponse{State: v2State(t, s, &state)}
+			r.Delete(context.Background(), resource.DeleteRequest{State: v2State(t, s, &state)}, &resp)
+			diags = resp.Diagnostics
+		}
+
+		if diags.HasError() != c.want.wantErr {
+			t.Errorf("%s: error = %v, want %v (%v)", c.name, diags.HasError(), c.want.wantErr, diags)
+		}
+		if c.want.wantErr && diags[0].Summary() != "SSO Group Changed Outside Terraform" {
+			t.Errorf("%s: the 412 should say the group changed outside Terraform, got %v", c.name, diags)
+		}
+		if strings.Join(server.calls(), "\n") != strings.Join(c.want.wantCalls, "\n") {
+			t.Errorf("%s: requests\n got: %v\nwant: %v", c.name, server.calls(), c.want.wantCalls)
+		}
+		for i, r := range server.requests {
+			if r.Method == http.MethodPatch || r.Method == http.MethodDelete {
+				want := "e-1"
+				if i > 0 {
+					want = "e-2"
+				}
+				if r.IfMatch != want {
+					t.Errorf("%s: request %d sent If-Match %q, want %q", c.name, i, r.IfMatch, want)
+				}
+			}
+		}
+		if strings.HasPrefix(c.write, "PATCH") {
+			wantId := "old"
+			if !c.want.wantErr {
+				wantId = "new"
+			}
+			if got.Id.ValueString() != wantId {
+				t.Errorf("%s: state id = %v, want %s", c.name, got.Id, wantId)
+			}
+		}
+	}
+}
+
+// The check behind the retry, on its own: the name and the managed roles must
+// both be what state holds.
+func TestSsoGroupUnchangedSince(t *testing.T) {
+	ctx := context.Background()
+	state := ssoGroupState(t, "g", "e-1", ssoRole("admin", nullScope()), ssoRole("viewer", scopeObject(t, "usage_group", types.StringValue("UG-1"))))
+	stateRoles, _ := ssoGroupRolesFromSet(ctx, state.Roles)
+	group := &ssoGroupResponse{Id: "g", Name: "g", Etag: "e-2"}
+	same := ssoGroupManagedGrants(ssoGrants(t, `[`+teamGrant+`,`+orgGrant+`,`+groupGrant+`]`))
+
+	if !ssoGroupUnchangedSince(ctx, &state, stateRoles, group, same) {
+		t.Error("the same name and roles, with a team membership added, should count as unchanged")
+	}
+	if ssoGroupUnchangedSince(ctx, &state, stateRoles, &ssoGroupResponse{Id: "h", Name: "h"}, same) {
+		t.Error("another name is a change")
+	}
+	if ssoGroupUnchangedSince(ctx, &state, stateRoles, group, ssoGrants(t, `[`+orgGrant+`]`)) {
+		t.Error("a revoked role is a change")
+	}
+	if ssoGroupUnchangedSince(ctx, &state, stateRoles, group, ssoGrants(t, `[`+orgGrant+`,`+groupGrant+`,`+editorGrant+`]`)) {
+		t.Error("an added role is a change")
+	}
+	if ssoGroupUnchangedSince(ctx, &state, stateRoles, group, ssoGrants(t, `[`+orgGrant+`,`+groupGrant+`,`+groupGrant+`]`)) {
+		t.Error("a duplicate grant is a change")
 	}
 }
 

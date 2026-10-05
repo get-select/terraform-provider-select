@@ -359,6 +359,26 @@ func ssoGroupRolesValue(ctx context.Context, configured []ssoGroupRole, grants [
 	return set, diags
 }
 
+// ssoGroupUnchangedSince reports whether the group that SELECT holds now has
+// the name and the managed roles that state holds. grants are the managed
+// grants (see ssoGroupManagedGrants). The roles are compared the way Read
+// compares them: by role and scope, with the scope id compared without case,
+// and an omitted scope the same as the organization.
+//
+// When this is true, a 412 can only come from a change that this resource
+// does not manage, such as a team membership of the group. See
+// ssoGroupResource.writeGroup.
+func ssoGroupUnchangedSince(ctx context.Context, state *ssoGroupModel, stateRoles []ssoGroupRole, group *ssoGroupResponse, grants []ssoGroupRoleResponse) bool {
+	if group.Id != state.Id.ValueString() || group.Name != state.Name.ValueString() {
+		return false
+	}
+	roles, diags := ssoGroupRolesValue(ctx, stateRoles, grants)
+	if diags.HasError() || diags.WarningsCount() > 0 {
+		return false
+	}
+	return roles.Equal(state.Roles)
+}
+
 func buildSsoGroupCreate(name types.String, roles []ssoGroupRole) *ssoGroupCreatePayload {
 	payload := &ssoGroupCreatePayload{
 		Name:  name.ValueString(),
