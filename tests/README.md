@@ -10,7 +10,9 @@ configuration against Snowflake, Databricks, BigQuery or S3 for real, so they
 need working credentials for the system being connected and are kept out of
 `make test`. `budget.tftest.hcl` manages a real budget, but creating one makes
 no call to an external system — SELECT stores the definition directly — so it
-needs nothing beyond the same API key every suite already uses.
+needs nothing beyond the same API key every suite already uses. `team.tftest.hcl`
+is the same: it manages a real team, one member and the `select_team` data
+source, and calls no external system.
 
 ## Setup
 
@@ -38,8 +40,9 @@ make test-bigquery
 make test-aws
 make test-connections  # all four
 make test-budget       # no credentials of its own; joins CI's e2e matrix
+make test-team         # no credentials of its own; joins CI's e2e matrix
 make test-clean        # remove local state files
-make test-sweep        # delete connections and budgets a failed run left behind
+make test-sweep        # delete connections, budgets, usage group sets and teams a failed run left behind
 ```
 
 Individual cases:
@@ -52,8 +55,8 @@ terraform test provider.tftest.hcl -filter=create_usage_group_set
 ## What the connection suites cover
 
 Each one walks a full create → update → delete cycle against the live API.
-`budget.tftest.hcl` follows the same shape, minus anything that depends on an
-external system:
+`budget.tftest.hcl` and `team.tftest.hcl` follow the same shape, minus anything
+that depends on an external system:
 
 - **create** — the resource lands in state with what SELECT resolved from the
   system being connected, including the ETag every later write depends on, and
@@ -89,6 +92,7 @@ variables for the one you want to run.
 | BigQuery | `bigquery_connection_name`, `bigquery_gcp_project_id`, `bigquery_dataset_id`, `bigquery_billing_account_id`, `bigquery_service_account` |
 | AWS | `aws_connection_name`, `aws_payer_account_id`, `aws_s3_bucket`, `aws_s3_prefix`, `aws_region`, `aws_access_key_id`, `aws_secret_access_key` |
 | Budget | `budget_name` — nothing else; creating a budget makes no call to an external system |
+| Team | `team_name`, and optionally `team_member_email` — the user the suite adds to its team. CI reads it from the `TF_E2E_TEAM_MEMBER_EMAIL` repository variable |
 
 One of these is not obvious: **`bigquery_service_account`** is not a credential
 this test holds. Access comes from the SELECT backend impersonating that service
@@ -96,9 +100,9 @@ account, so the grant lives in the target GCP project's IAM, not here.
 
 ## In CI
 
-`.github/workflows/e2e.yaml` runs the connection suites and budget as a matrix
-against the deployed API using a dedicated test organization — Databricks,
-BigQuery, AWS and Budget. Credentials come from GitHub secrets mapped to the
+`.github/workflows/e2e.yaml` runs the connection suites, budget, usage groups
+and teams as a matrix against the deployed API using a dedicated test
+organization — Databricks, BigQuery, AWS, Budget, Usage Group and Team. Credentials come from GitHub secrets mapped to the
 `TF_VAR_` names above — the same mechanism the select repo's `test-e2e.yaml`
 uses, though every secret here is its own copy rather than shared with it.
 select's equivalents are named `E2E_CREATE_*` because it also runs e2e tests
@@ -120,7 +124,8 @@ Two things keep runs from tripping over each other:
   workflow takes a `concurrency` lock. SELECT refuses a second connection with a
   name already in use, and the same Snowflake account identifier cannot be added
   to an organization twice, so runs have to queue rather than overlap.
-- `scripts/ci-cleanup-connections.sh` sweeps before and after, budgets included.
+- `scripts/ci-cleanup-connections.sh` sweeps before and after, budgets, usage
+  group sets and teams included.
   A run cancelled mid-apply leaves a resource attached, and its name is then
   taken for good. `make test-sweep` runs the same script locally.
 
@@ -130,7 +135,7 @@ Two things keep runs from tripping over each other:
 Verify your environment variables. Each suite needs an API key with the read
 and write scopes for the resource in question — `snowflake_accounts:*`,
 `databricks_connections:*`, `bigquery_connections:*`, `aws_accounts:*`,
-`budgets:*`.
+`budgets:*`, `teams:*`.
 
 ### `Error: Could not find required provider`
 Run `make install && make setup-dev-overrides`.

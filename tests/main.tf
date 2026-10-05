@@ -401,6 +401,53 @@ variable "budget_name_suffix" {
   default     = ""
 }
 
+# Team test variables.
+#
+# Like budgets, a team makes no call to an external system, so this suite
+# needs nothing beyond the API key and organization every other test already
+# uses. It defaults to off so provider.tftest.hcl and `make test`/`test-all`
+# are unaffected.
+variable "enable_team_tests" {
+  description = "Whether to manage a real team, team member and team data source"
+  type        = bool
+  default     = false
+}
+
+variable "team_name" {
+  description = "Display name for the team in SELECT"
+  type        = string
+  default     = "terraform-test-team"
+}
+
+# The rename test needs a second name. A run block cannot build one — Terraform
+# does not expose var.* inside a run's variables block — so the suffix is its
+# own variable and the name is composed below.
+variable "team_name_suffix" {
+  description = "Appended to the team name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
+}
+
+variable "team_default_member_role" {
+  description = "default_member_role for the test team"
+  type        = string
+  default     = "editor"
+}
+
+# The user the member resource adds to the test team. It is only a member of
+# the test team, which the suite deletes at the end.
+variable "team_member_email" {
+  description = "Email address of the user the test adds to the test team"
+  type        = string
+  default     = "terraform-test-member@example.com"
+}
+
+variable "team_member_role" {
+  description = "Role of the test member within the test team"
+  type        = string
+  default     = "editor"
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -580,6 +627,34 @@ resource "select_budget" "test" {
   filter_expression_json = var.simple_filter_expression_json
 }
 
+# Team, one member and a lookup of the team by name. count keeps them out of
+# the way of every other test: with enable_team_tests unset there is no
+# resource and no API call.
+#
+# The data source refers to the managed team, so Terraform reads it during
+# apply, after the team is created or renamed, and not during plan.
+resource "select_team" "test" {
+  count = var.enable_team_tests ? 1 : 0
+
+  name                = "${var.team_name}${var.team_name_suffix}"
+  default_member_role = var.team_default_member_role
+}
+
+resource "select_team_member" "test" {
+  count = var.enable_team_tests ? 1 : 0
+
+  team_id    = select_team.test[0].id
+  type       = "user"
+  identifier = var.team_member_email
+  role       = var.team_member_role
+}
+
+data "select_team" "test" {
+  count = var.enable_team_tests ? 1 : 0
+
+  name = select_team.test[0].name
+}
+
 # Outputs for verification. one() rather than [0]: these are unconditional, so
 # they're still evaluated — and would error on an out-of-range index — when a
 # connection suite runs with enable_usage_group_tests left at its default false.
@@ -634,4 +709,12 @@ output "aws_connection_id" {
 
 output "budget_id" {
   value = one(select_budget.test[*].id)
+}
+
+output "team_id" {
+  value = one(select_team.test[*].id)
+}
+
+output "team_member_id" {
+  value = one(select_team_member.test[*].id)
 }

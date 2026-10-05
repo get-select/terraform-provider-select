@@ -38,6 +38,14 @@ This ensures the provider stays in sync with SELECT's API automatically.
 | `select_databricks_connection` | v2 |
 | `select_bigquery_connection` | v2 |
 | `select_aws_connection` | v2 |
+| `select_team` | v2 |
+| `select_team_member` | v2 |
+
+### Data Sources
+
+| Data Source | API |
+| --- | --- |
+| `select_team` | v2 |
 
 Each v2 resource needs an API key carrying that resource's own scopes: `snowflake_accounts:read` and `snowflake_accounts:write` for Snowflake accounts, `databricks_connections:read` and `databricks_connections:write` for Databricks connections, `bigquery_connections:read` and `bigquery_connections:write` for BigQuery connections, `aws_accounts:read` and `aws_accounts:write` for AWS connections.
 

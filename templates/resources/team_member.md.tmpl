@@ -1,0 +1,52 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+Each `{{ .Name }}` adds one user or one SSO group to one team. Use `for_each` over a set of email addresses to manage many members; adding or removing an email then changes only that member. Members that Terraform does not manage are not changed.
+
+A user is identified by email address and an SSO group by its name as your identity provider reports it. The provider does not create users: they sign in through your identity provider.
+
+This resource is backed by SELECT's v2 API, at `/v2/teams/{team_id}/members`.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the team ID and the member ID, separated by a forward slash:
+
+```bash
+terraform import {{ .Name }}.example <team_id>/<member_id>
+```
+
+To find the member ID, list the team's members with the API:
+
+```bash
+curl -s https://api.select.dev/v2/teams/$TEAM_ID/members \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, type, identifier, role}'
+```
+
+## Additional Information
+
+### Only `role` changes in place
+
+A change to `role` is an update. A change to `team_id`, `type` or `identifier` removes the member and adds a new one.
+
+### How the provider reads a member
+
+The API has no route that returns one member, so the provider lists the team's members and finds this one by its ID. If the member is not in the list, for example because someone removed it in the SELECT UI, the next plan adds it again.
+
+### The all-users team
+
+The built-in all-users team includes every organization member automatically. The API always lists no members for it, so this resource cannot read back a member of that team, and every plan would add the member again. Do not use the all-users team as `team_id`.
+
+### Changes made outside Terraform
+
+Every write carries the member's `etag` as an `If-Match` header, so an update or delete is refused if the member changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.
