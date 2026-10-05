@@ -14,7 +14,7 @@ needs nothing beyond the same API key every suite already uses. `team.tftest.hcl
 is the same: it manages a real team, one member and the `select_team` data
 source, and calls no external system. So is `role.tftest.hcl`: it grants a team
 role, a user role and a default role, on a team, usage group set and usage
-group it makes itself. So is `sso_group.tftest.hcl`: it manages an SSO group
+group it makes itself, and reads the `select_users` data source. So is `sso_group.tftest.hcl`: it manages an SSO group
 with two roles, and a team member that refers to the group.
 
 ## Setup

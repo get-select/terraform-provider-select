@@ -71,6 +71,11 @@ test-validate:
 	# Critical: Dev overrides require TF_CLI_CONFIG_FILE to be set in CI environments
 	# The terraform validate command will show a warning about dev overrides when working correctly
 	@cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform validate
+	# The user admin guide embeds this full root module. It needs no credentials
+	# to validate.
+	@cd examples/guides/user_admin && TF_CLI_CONFIG_FILE=../../../.terraformrc terraform validate
+	terraform fmt -check -recursive examples/guides
+	terraform fmt -check -recursive examples/data-sources
 	@echo "Test configuration validation complete!"
 
 
@@ -172,7 +177,8 @@ test-team:
 	@echo "Running team tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=team.tftest.hcl
 
-# Role grant tests: select_team_role, select_user_role and select_default_role.
+# Role grant tests: select_team_role, select_user_role and select_default_role,
+# and a read of the select_users data source.
 # Like teams, a role grant makes no call to an external system, so this needs
 # only the API key and organization every other test already uses. The suite
 # makes its own team, usage group set and usage group to grant roles on.

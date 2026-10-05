@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
-# Role grant tests: select_team_role, select_user_role and select_default_role.
+# Role grant tests: select_team_role, select_user_role and select_default_role,
+# and a read of the select_users data source.
 #
 # These are separate from provider.tftest.hcl for the same reason the team
 # suite is: they share tests/main.tf's root module but have nothing to do with
@@ -51,6 +52,18 @@ run "create_roles" {
   assert {
     condition     = select_default_role.test[0].scope.type == "usage_group" && select_default_role.test[0].scope.id == select_usage_group.role[0].id
     error_message = "The default role grant's scope should read back as the test usage group"
+  }
+
+  assert {
+    condition     = alltrue([for user in data.select_users.all[0].users : user.id != "" && user.email != ""])
+    error_message = "Every listed user should have an ID and an email address"
+  }
+
+  # An email that is not a user is not an error. This checks only that the
+  # filter keeps no other user; the unit tests check the match without case.
+  assert {
+    condition     = alltrue([for user in data.select_users.role_user[0].users : lower(user.email) == lower(var.role_user_email)])
+    error_message = "The filtered list should hold no user other than the user role email"
   }
 }
 
