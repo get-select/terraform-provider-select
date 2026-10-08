@@ -1,0 +1,42 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+A team groups users and SSO groups. A role granted to a team applies to every member of the team. Add members with `select_team_member`. To refer to a team that Terraform does not manage, such as the built-in all-users team, use the `select_team` data source.
+
+This resource is backed by SELECT's v2 API, at `/v2/teams`.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the team's ID in SELECT:
+
+```bash
+terraform import {{ .Name }}.example 2f0899e2-2746-4300-887c-524e64b5a138
+```
+
+To find the ID, list the teams with the API:
+
+```bash
+curl -s https://api.select.dev/v2/teams \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name}'
+```
+
+## Additional Information
+
+### Changes made outside Terraform
+
+Every write carries the team's `etag` as an `If-Match` header, so an update or delete is refused if the team changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.
+
+### Deleting a team also deletes its members and role grants
+
+Destroying this resource removes the team, every membership on it and every role granted to it. The users and SSO groups themselves are not changed.

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 #
-# Delete connections and budgets a test run left attached to the organization.
+# Delete connections, budgets, usage group sets and teams a test run left
+# attached to the organization.
 #
 # `terraform test` destroys what it created, but a run cancelled mid-apply — or
 # one whose destroy the API refused — leaves a resource behind. The next run
@@ -16,7 +17,7 @@
 # is deliberately given the bare prefix to reach older leaks.
 #
 # Environment:
-#   SELECT_API_KEY          key with <resource>:read and :write for all six
+#   SELECT_API_KEY          key with <resource>:read and :write for all seven
 #   SELECT_ORGANIZATION_ID  organization the resources belong to
 #   SELECT_API_URL          defaults to https://api.select.dev
 #   CI_RESOURCE_PREFIX      defaults to terraform-test
@@ -37,6 +38,10 @@ COLLECTIONS=(
   # Deleting a set also deletes the groups nested under it, so no separate
   # sweep of usage-group-sets/{id}/usage-groups is needed.
   usage-group-sets
+  # Deleting a team also deletes its memberships and role grants, so no
+  # separate sweep of teams/{id}/members is needed. Only teams whose name has
+  # the prefix are touched, so the built-in all-users team is never deleted.
+  teams
 )
 
 deleted=0
@@ -101,7 +106,7 @@ sweep_collection() {
   done
 }
 
-echo "Sweeping connections named '${PREFIX}*' from organization ${SELECT_ORGANIZATION_ID} at ${API_URL}"
+echo "Sweeping resources named '${PREFIX}*' from organization ${SELECT_ORGANIZATION_ID} at ${API_URL}"
 for collection in "${COLLECTIONS[@]}"; do
   echo "${collection}:"
   sweep_collection "$collection"

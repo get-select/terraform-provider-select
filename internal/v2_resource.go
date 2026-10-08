@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -47,6 +48,11 @@ type v2Resource[TModel, TResponse any] struct {
 	// needs the parent's id in its path as well as its own.
 	collectionEndpoint func(model *TModel) string
 	itemEndpoint       func(model *TModel) string
+	// fetch reads the item's current state from the API, for Read and for the
+	// ETag refetch in write. Nil means a GET on itemEndpoint. A resource with
+	// no GET-by-id route — a team member, a role grant — uses v2ListAndFind
+	// instead, which answers a 404 when the list does not hold the item.
+	fetch func(ctx context.Context, client *APIClient, model *TModel) (*TResponse, *apiError, diag.Diagnostics)
 	// identity reads the ID and ETag a write or delete needs out of a model.
 	identity func(model *TModel) v2Identity
 	// prepareWrite runs before a create, update or delete issues its request,
@@ -85,20 +91,27 @@ var _ resource.ResourceWithValidateConfig = (*v2Resource[struct{}, struct{}])(ni
 // Configure with no data during validation — and adds a diagnostic when the
 // data is not what this provider puts there.
 func configureAPIClient(req resource.ConfigureRequest, resp *resource.ConfigureResponse) *APIClient {
-	if req.ProviderData == nil {
-		return nil
+	client, diags := apiClientFromProviderData("Resource", req.ProviderData)
+	resp.Diagnostics.Append(diags...)
+	return client
+}
+
+// apiClientFromProviderData is the part of Configure that resources and data
+// sources share. kind is "Resource" or "Data Source", for the diagnostic.
+func apiClientFromProviderData(kind string, data any) (*APIClient, diag.Diagnostics) {
+	if data == nil {
+		return nil, nil
 	}
 
-	providerData, ok := req.ProviderData.(*ProviderData)
+	providerData, ok := data.(*ProviderData)
 	if !ok {
-		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *ProviderData, got: %T. Please report this issue to the provider developers.", req.ProviderData),
-		)
-		return nil
+		return nil, diag.Diagnostics{diag.NewErrorDiagnostic(
+			"Unexpected "+kind+" Configure Type",
+			fmt.Sprintf("Expected *ProviderData, got: %T. Please report this issue to the provider developers.", data),
+		)}
 	}
 
-	return providerData.Client
+	return providerData.Client, nil
 }
 
 func (r *v2Resource[TModel, TResponse]) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
@@ -125,6 +138,40 @@ func (r *v2Resource[TModel, TResponse]) ImportState(ctx context.Context, req res
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
+// splitChildImportID splits a `terraform import` address of the form
+// `parent/child`. It splits at the last "/": a child id the API assigns has no
+// "/", but a parent id can — an email address or an SSO group name can hold
+// one. ok is false when either part is empty or there is no "/".
+func splitChildImportID(id string) (parent, child string, ok bool) {
+	i := strings.LastIndex(id, "/")
+	if i < 0 {
+		return "", "", false
+	}
+	parent, child = id[:i], id[i+1:]
+	return parent, child, parent != "" && child != ""
+}
+
+// v2ImportChild builds an importState hook for a resource nested under a
+// parent. The address is `<parent id>/<child id>`. The hook writes the parent
+// id to parentAttribute and the child id to "id"; Read then fills in the rest.
+// noun names the resource in the diagnostic, and form is the address form the
+// diagnostic shows, such as "team_id/member_id".
+func v2ImportChild(noun, parentAttribute, form string) func(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	return func(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+		parent, child, ok := splitChildImportID(req.ID)
+		if !ok {
+			resp.Diagnostics.AddError(
+				"Invalid "+noun+" Import ID",
+				fmt.Sprintf("Expected an import ID of the form `%s`, got %q.", form, req.ID),
+			)
+			return
+		}
+
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root(parentAttribute), parent)...)
+		resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), child)...)
+	}
+}
+
 // prepare runs the resource's prepareWrite hook, if it has one.
 func (r *v2Resource[TModel, TResponse]) prepare(ctx context.Context, model *TModel) diag.Diagnostics {
 	if r.prepareWrite == nil {
@@ -133,11 +180,25 @@ func (r *v2Resource[TModel, TResponse]) prepare(ctx context.Context, model *TMod
 	return r.prepareWrite(ctx, r.client, model)
 }
 
+// get reads the item's current state from the API, through the fetch hook
+// when the resource has one.
+func (r *v2Resource[TModel, TResponse]) get(ctx context.Context, model *TModel) (*TResponse, *apiError, diag.Diagnostics) {
+	if r.fetch != nil {
+		return r.fetch(ctx, r.client, model)
+	}
+
+	var response TResponse
+	apiErr, diags := r.client.doRequest(ctx, http.MethodGet, r.itemEndpoint(model), nil, &response, requestOptions{})
+	if diags.HasError() || apiErr != nil {
+		return nil, apiErr, diags
+	}
+	return &response, nil, nil
+}
+
 // freshEtag re-reads the resource and returns the ETag it currently has, for
 // retrying a write this provider itself invalidated. See selfInflicted412.
 func (r *v2Resource[TModel, TResponse]) freshEtag(ctx context.Context, state *TModel) (types.String, diag.Diagnostics) {
-	var response TResponse
-	apiErr, diags := r.client.doRequest(ctx, http.MethodGet, r.itemEndpoint(state), nil, &response, requestOptions{})
+	response, apiErr, diags := r.get(ctx, state)
 	if diags.HasError() {
 		return types.StringNull(), diags
 	}
@@ -148,7 +209,7 @@ func (r *v2Resource[TModel, TResponse]) freshEtag(ctx context.Context, state *TM
 	}
 
 	refreshed := *state
-	diags = r.applyResponse(ctx, &refreshed, state, &response)
+	diags = r.applyResponse(ctx, &refreshed, state, response)
 	if diags.HasError() {
 		return types.StringNull(), diags
 	}
@@ -255,15 +316,15 @@ func (r *v2Resource[TModel, TResponse]) Read(ctx context.Context, req resource.R
 		return
 	}
 
-	var response TResponse
-	apiErr, diags := r.client.doRequest(ctx, http.MethodGet, r.itemEndpoint(&state), nil, &response, requestOptions{})
+	response, apiErr, diags := r.get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	if apiErr != nil {
 		// Gone, or no longer visible to this API key. Either way Terraform
-		// should plan to recreate it rather than keep stale values.
+		// should plan to recreate it rather than keep stale values. A fetch
+		// hook that lists rather than GETs answers a missing item the same way.
 		if apiErr.StatusCode == http.StatusNotFound {
 			tflog.Debug(ctx, "SELECT resource not found, removing from state", map[string]interface{}{"path": r.itemEndpoint(&state)})
 			resp.State.RemoveResource(ctx)
@@ -274,7 +335,7 @@ func (r *v2Resource[TModel, TResponse]) Read(ctx context.Context, req resource.R
 	}
 
 	refreshed := state
-	resp.Diagnostics.Append(r.applyResponse(ctx, &refreshed, &state, &response)...)
+	resp.Diagnostics.Append(r.applyResponse(ctx, &refreshed, &state, response)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}

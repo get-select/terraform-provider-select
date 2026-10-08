@@ -15,6 +15,8 @@ The SELECT Terraform provider supports importing existing resources that were cr
 - `select_bigquery_connection` - BigQuery Connections
 - `select_aws_connection` - AWS Connections
 - `select_budget` - Budgets
+- `select_team` - Teams
+- `select_team_member` - Team Members
 
 ## Prerequisites
 
@@ -143,6 +145,20 @@ Open the budget in the SELECT UI and take the last segment of the URL, or list t
 curl -s https://api.select.dev/v2/budgets \
   -H "Authorization: Bearer $SELECT_API_KEY" \
   -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, amount}'
+```
+
+### Team ID and Team Member ID
+
+SELECT assigns both IDs. List the teams, then the members of one team, with the API:
+
+```bash
+curl -s https://api.select.dev/v2/teams \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name}'
+
+curl -s https://api.select.dev/v2/teams/$TEAM_ID/members \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, type, identifier, role}'
 ```
 
 ## Converting Filter Expressions from JSON to Terraform
@@ -290,6 +306,34 @@ terraform import select_budget.production 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
 ```
 
 **Note**: Unlike the connection resources, a budget holds no secret, so nothing about the import is incomplete. `period` must still match what SELECT has on record — including `schedule_type` — or the first `terraform plan` after the import will show it as a change.
+
+### Importing a Team
+
+**Command Format:**
+```bash
+terraform import select_team.<resource_name> <team_id>
+```
+
+**Example:**
+```bash
+terraform import select_team.data_engineering 2f0899e2-2746-4300-887c-524e64b5a138
+```
+
+### Importing a Team Member
+
+A member is addressed through its team, so the import ID holds both IDs, separated by a forward slash.
+
+**Command Format:**
+```bash
+terraform import select_team_member.<resource_name> <team_id>/<member_id>
+```
+
+**Example:**
+```bash
+terraform import select_team_member.alice 2f0899e2-2746-4300-887c-524e64b5a138/7c1d4e2a-0b3f-4a5e-9c8d-1e2f3a4b5c6d
+```
+
+**Note**: `role` defaults to `editor`. If the member has a different role in SELECT, set `role` in the configuration before you import, or the first `terraform plan` will show a change.
 
 ## Step-by-Step Import Process
 

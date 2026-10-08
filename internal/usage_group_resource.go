@@ -5,8 +5,6 @@ package provider
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -74,19 +72,7 @@ func usageGroupVersionRecorded(client *APIClient, model *resource_usage_group.Us
 // importUsageGroup reads a `terraform import` address of the form
 // `usage_group_set_id/usage_group_id`. A group is addressed through its set on
 // every route, so its own id is not enough to find it.
-func importUsageGroup(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	setId, id, found := strings.Cut(req.ID, "/")
-	if !found || setId == "" || id == "" {
-		resp.Diagnostics.AddError(
-			"Invalid Usage Group Import ID",
-			fmt.Sprintf("Expected an import ID of the form `usage_group_set_id/usage_group_id`, got %q.", req.ID),
-		)
-		return
-	}
-
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("usage_group_set_id"), setId)...)
-	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
-}
+var importUsageGroup = v2ImportChild("Usage Group", "usage_group_set_id", "usage_group_set_id/usage_group_id")
 
 // validateUsageGroupConfig rejects at plan time a filter the API would reject
 // on the way in, so a mistake costs a plan rather than a round trip. Only the

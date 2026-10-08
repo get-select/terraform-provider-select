@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-team test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 # The provider is generated from the v2 API's OpenAPI document. specpatch fills
 # in what tfplugingen-openapi cannot produce — dropped descriptions, sensitive
 # attributes, plan modifiers. See tools/specpatch.
@@ -159,13 +159,27 @@ test-budget:
 	@echo "Running budget tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=budget.tftest.hcl
 
+# Team tests: select_team, select_team_member and the select_team data source.
+# Like budgets, a team makes no call to an external system, so this needs only
+# the API key and organization every other test already uses.
+#
+# Required environment:
+#   TF_VAR_select_api_key      an API key with teams:read and :write
+#   TF_VAR_select_organization_id
+# Optional:
+#   TF_VAR_team_member_email   the user the test adds to its team
+test-team:
+	@echo "Running team tests..."
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=team.tftest.hcl
+
 # Alias for the e2e workflow, whose matrix runs `make test-${{ matrix.platform }}`
 # for every leg. The usage group suite already runs as part of test-all
 # (provider.tftest.hcl), so this just gives it a matching name rather than
 # splitting it into its own filtered target.
 test-usage-group: test-all
 
-# Remove connections and budgets a failed run left attached to the organization.
+# Remove connections, budgets, usage group sets and teams a failed run left
+# attached to the organization.
 # `terraform test` tears down what it can, but a run killed mid-apply — or one
 # whose destroy the API refused — leaves a resource behind. A leaked connection
 # then fails the next run outright, on the name already being in use; a leaked
@@ -177,7 +191,7 @@ test-usage-group: test-all
 #   SELECT_API_KEY, SELECT_ORGANIZATION_ID, and optionally SELECT_API_URL
 #   CI_RESOURCE_PREFIX         defaults to terraform-test
 test-sweep:
-	@echo "Sweeping leftover test connections and budgets..."
+	@echo "Sweeping leftover test connections, budgets, usage group sets and teams..."
 	./scripts/ci-cleanup-connections.sh
 
 test-clean:
@@ -241,7 +255,8 @@ help:
 	@echo "  test-aws         - Run AWS connection tests (needs a real AWS payer account and CUR bucket)"
 	@echo "  test-connections - Run all four connection test suites"
 	@echo "  test-budget      - Run budget tests (needs only an API key; no external system involved)"
-	@echo "  test-sweep       - Delete connections and budgets a failed run left behind"
+	@echo "  test-team        - Run team tests (needs only an API key; no external system involved)"
+	@echo "  test-sweep       - Delete connections, budgets, usage group sets and teams a failed run left behind"
 	@echo "  test-clean       - Clean up test resources and state files"
 	@echo ""
 	@echo "Run individual tests with:"

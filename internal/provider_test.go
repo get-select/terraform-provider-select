@@ -3,8 +3,12 @@
 package provider
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/hashicorp/terraform-plugin-framework/datasource"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 )
 
 // A trailing slash is a typo worth absorbing rather than rejecting: it should
@@ -61,6 +65,44 @@ func TestNormalizeAPIURLRejectsAURLTheProviderCannotUse(t *testing.T) {
 		detail := diags[0].Detail()
 		if !strings.Contains(detail, wantSubstring) {
 			t.Errorf("normalizeAPIURL(%q) diagnostic %q should mention %q", input, detail, wantSubstring)
+		}
+	}
+}
+
+// Every registered resource and data source must have a name and a schema the
+// framework accepts. A schema mistake otherwise shows only when Terraform
+// loads the provider.
+func TestProviderRegistersValidSchemas(t *testing.T) {
+	ctx := context.Background()
+	p := &selectProvider{}
+
+	names := map[string]bool{}
+	for _, newResource := range p.Resources(ctx) {
+		r := newResource()
+		var meta resource.MetadataResponse
+		r.Metadata(ctx, resource.MetadataRequest{ProviderTypeName: "select"}, &meta)
+		var s resource.SchemaResponse
+		r.Schema(ctx, resource.SchemaRequest{}, &s)
+		if diags := s.Schema.ValidateImplementation(ctx); diags.HasError() {
+			t.Errorf("resource %s has an invalid schema: %v", meta.TypeName, diags)
+		}
+		names["resource "+meta.TypeName] = true
+	}
+	for _, newDataSource := range p.DataSources(ctx) {
+		d := newDataSource()
+		var meta datasource.MetadataResponse
+		d.Metadata(ctx, datasource.MetadataRequest{ProviderTypeName: "select"}, &meta)
+		var s datasource.SchemaResponse
+		d.Schema(ctx, datasource.SchemaRequest{}, &s)
+		if diags := s.Schema.ValidateImplementation(ctx); diags.HasError() {
+			t.Errorf("data source %s has an invalid schema: %v", meta.TypeName, diags)
+		}
+		names["data source "+meta.TypeName] = true
+	}
+
+	for _, want := range []string{"resource select_team", "resource select_team_member", "data source select_team"} {
+		if !names[want] {
+			t.Errorf("%s should be registered, got %v", want, names)
 		}
 	}
 }

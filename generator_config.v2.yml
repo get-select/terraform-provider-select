@@ -324,3 +324,87 @@ resources:
             description: >-
               RFC 3339 UTC. SELECT does not currently advance this when the
               group's fields change, so compare etag to detect a change.
+
+  team:
+    create:
+      path: /teams
+      method: POST
+    read:
+      path: /teams/{team_id}
+      method: GET
+    update:
+      path: /teams/{team_id}
+      method: PATCH
+    delete:
+      path: /teams/{team_id}
+      method: DELETE
+    schema:
+      attributes:
+        aliases:
+          team_id: id
+        overrides:
+          id:
+            description: >-
+              The team's identifier in SELECT, assigned when it is created. Use it with
+              `terraform import` to bring an existing team under management.
+          default_member_role:
+            description: >-
+              The default role for members added to this team: `admin`, `editor` or
+              `viewer`. Defaults to `editor`. `select_team_member` always sends its own
+              `role`, so this default does not apply to the members Terraform adds.
+          is_all_users:
+            description: >-
+              Whether the team automatically includes every organization member.
+              Defaults to `false`.
+          etag:
+            description: >-
+              Opaque strong ETag for this team. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.
+
+  team_member:
+    create:
+      path: /teams/{team_id}/members
+      method: POST
+    # The API has no GET for one member. The read operation here only supplies
+    # the schema, and the create operation has the same response (TeamMemberV2)
+    # and the same team_id path parameter. The resource reads a member from the
+    # team's member list. See team_member_resource.go.
+    read:
+      path: /teams/{team_id}/members
+      method: POST
+    update:
+      path: /teams/{team_id}/members/{member_id}
+      method: PATCH
+    delete:
+      path: /teams/{team_id}/members/{member_id}
+      method: DELETE
+    schema:
+      attributes:
+        aliases:
+          member_id: id
+        overrides:
+          id:
+            description: >-
+              The membership's identifier in SELECT, assigned when the member is added.
+              Use it with `terraform import`, as `team_id/id`, to bring an existing
+              member under management.
+          team_id:
+            description: >-
+              The team to add the member to. Changing it removes the member from the
+              old team and adds it to the new one.
+          type:
+            description: >-
+              Whether the member is an individual user (`user`) or an SSO group
+              (`sso_group`). Changing it forces a new member.
+          identifier:
+            description: >-
+              The user's email address, or the SSO group's name as the identity
+              provider reports it. Changing it forces a new member.
+          role:
+            description: >-
+              The member's role within the team: `admin`, `editor` or `viewer`.
+              Defaults to `editor`. Changes in place.
+          etag:
+            description: >-
+              Opaque strong ETag for this membership. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.

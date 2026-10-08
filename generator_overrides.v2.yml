@@ -394,3 +394,71 @@ resources:
         use_state_for_unknown: true
       create_time:
         use_state_for_unknown: true
+
+  team:
+    description: >-
+      A team in the organization. A team groups users and SSO groups, so that a
+      role granted to the team applies to all of its members.
+
+    description_sources:
+      - TeamCreateV2
+      - TeamV2
+
+    attributes:
+      # TeamCreateV2 gives default_member_role a default of editor, but the
+      # property is a $ref, and the generator drops a default it finds next to
+      # one. Without this the attribute stays unknown until apply.
+      default_member_role:
+        default:
+          static: editor
+
+      # SELECT assigns these once, when the team is created, and does not
+      # change them. Holding them from state keeps them out of the "known after
+      # apply" list on every unrelated update.
+      #
+      # Deliberately not listed: etag and update_time, which change by design.
+      id:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
+  team_member:
+    description: >-
+      One member of a team: a user, identified by email address, or an SSO
+      group, identified by its name. Use one of these per member, for example
+      with `for_each` over a list of email addresses.
+
+    description_sources:
+      - TeamMemberCreateV2
+      - TeamMemberV2
+
+    attributes:
+      # team_id is a path parameter on every route. TeamMemberV2 does not carry
+      # it, so the generator makes it optional+computed — but a member cannot
+      # be added without naming its team. TeamMemberUpdateV2 does not carry it
+      # either, so the API cannot move a member between teams: a change has to
+      # replace the member.
+      team_id:
+        computed_optional_required: required
+        requires_replace: true
+
+      # TeamMemberUpdateV2 carries only role, so a change to either of these
+      # has to replace the member.
+      type:
+        requires_replace: true
+      identifier:
+        requires_replace: true
+
+      # Same $ref default the generator drops on team.default_member_role.
+      role:
+        default:
+          static: editor
+
+      # SELECT assigns these once, when the member is added, and does not
+      # change them.
+      #
+      # Deliberately not listed: etag, which changes by design.
+      id:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true

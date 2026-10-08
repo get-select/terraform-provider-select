@@ -28,7 +28,8 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `make test-aws` - AWS connection tests; needs an AWS payer account with a working CUR delivery, so it is excluded from `make test`
 - `make test-connections` - All four connection suites
 - `make test-budget` - Budget tests; creates no real connection, so it needs only the same API key every suite already uses
-- `make test-sweep` - Delete connections and budgets a failed run left attached to the organization
+- `make test-team` - Team, team member and team data source tests; like budget, needs only the API key
+- `make test-sweep` - Delete connections, budgets, usage group sets and teams a failed run left attached to the organization
 - `make test-clean` - Clean up test state files
 
 **Test Requirements**: Tests require environment variables:
@@ -79,6 +80,8 @@ internal/
 │   ├── resource_budget/
 │   ├── resource_databricks_connection/
 │   ├── resource_snowflake_account/
+│   ├── resource_team/
+│   ├── resource_team_member/
 │   ├── resource_usage_group/
 │   └── resource_usage_group_set/
 ├── provider.go            # Hand-written provider configuration and setup
@@ -97,7 +100,13 @@ internal/
 ├── aws_connection_resource.go        # AWS connection resource (v2 API)
 ├── aws_connection_api.go             # Its request payloads, response mapping, and error formatting
 ├── budget_resource.go                # Budget resource (v2 API): hand-written period attribute, CRUD and config validation
-└── budget_api.go                     # Its request payloads, response mapping, and error formatting
+├── budget_api.go                     # Its request payloads, response mapping, and error formatting
+├── v2_list.go                        # List pagination (page_token/max_results) and list-and-find reads for v2 list endpoints
+├── v2_data_source.go                 # Generic v2 data source (Configure/Read) shared by every data source
+├── role_grant_scope.go               # The shared role grant `scope {type, id}` attribute and its request/response mapping
+├── team_resource.go / team_api.go    # Team resource (v2 API)
+├── team_member_resource.go / team_member_api.go # Team member resource: no GET-by-id, so Read lists and finds
+└── team_data_source.go               # select_team data source: look up a team by exact name
 ```
 
 ### How Resources Work
@@ -165,7 +174,7 @@ Anything beyond a description — `computed_optional_required`, `requires_replac
 2. Run `make reset` to generate types
 3. Create `internal/new_resource_api.go` with payload/response structs and their builders
 4. Create `internal/new_resource_resource.go`, populating a `v2Resource` — see `usage_group_resource.go` for a resource nested under a parent, and `budget_resource.go` for one needing hand-written schema
-5. Register in `internal/provider.go`'s `Resources()` method
+5. Register in `internal/provider.go`'s `Resources()` method (a data source goes in `DataSources()`)
 6. Add tests in `internal/` (unit) and `tests/` (acceptance)
 
 ### Debugging Provider Issues
@@ -210,6 +219,9 @@ The v2 surface differs from v1 in ways the client has to honour:
 - **Errors are `application/problem+json`** (RFC 9457) carrying `detail` and a stable `code`. `newAPIError` reads them so diagnostics quote the API's own explanation rather than a raw body.
 - **Updates are JSON Merge Patch.** An omitted field is left unchanged and `null` clears it. What that implies for a payload depends on the resource: `snowflakeAccountUpdatePayload` sends every clearable field on every update, because removing one from a configuration has to reach the API as the `null` that clears it. `databricksConnectionUpdatePayload` sends only what changed, because nothing on that resource can be cleared and SELECT re-validates against Databricks whenever the access-related fields are merely *present*. `budgetUpdatePayload` also sends only what changed — its API 422s on an explicit null for `name`, `amount`, `period` and `started_at` — but unlike Databricks it does have two clearable fields, `team_id` and `filter_expression_json`, so those two use `*nullableString` for the three-state omit/null/value a plain pointer cannot express. Read the API's update schema before deciding which shape a new resource needs.
 - **Not every property survives codegen.** A `oneOf` discriminated union (budget's `period`) makes `tfplugingen-openapi` drop the whole resource with "schema composition is currently not supported," and a recursive `anyOf` (budget's `filter_expression`) is both ungeneratable and, on this API, dangerous to emit at all — sending both `filter_expression` and `filter_expression_json` 422s, and an explicit null counts as present. Both go in the resource's `ignores` list in `generator_config.v2.yml`; `period` is then hand-written as a `types.Object` attribute injected into the generated schema, and `filter_expression_json`, a plain JSON-encoded string, is the resource's whole filter surface.
+- **Some child resources have no GET-by-id.** Team members and role grants can only be listed. Set the `v2Resource.fetch` hook to `v2ListAndFind(...)`: Read pages through the list and answers a missing item with a 404, so the resource leaves state like any deleted resource. `tfplugingen-openapi` still requires a `read` operation, so `generator_config.v2.yml` points `read` at the create operation, which has the same response schema and path parameters.
+- **Lists are paginated.** Use `v2ListAll` / `v2FindInList` from `v2_list.go`; they send `max_results` and follow `page_token` until it is empty.
+- **Data sources are hand-written.** The generator builds a data source only from a GET-by-id route, and a lookup by name has none. `v2DataSource` supplies Configure/Metadata/Schema/Read; a data source gives it a schema and a lookup function.
 - **`doRequest` returns the status.** `doJSONRequest` flattens everything into diagnostics (and reports a 404 as a warning) for the v1 resources; callers that need to act on a status, such as removing a deleted resource from state, use `doRequest` directly.
 
 ## Testing Notes
@@ -224,4 +236,4 @@ Tests run against the live SELECT API and create real resources. Always run `mak
 
 The connection suites go further: each one drives a full create → update → delete cycle, with the delete written as a run block that flips the suite's `enable_*` variable to `false`. Terraform's own teardown would destroy the resource anyway, but it asserts nothing and swallows what it cannot remove, so a delete the API refuses has to fail the test rather than pass quietly. When one of these fails partway it leaves a connection attached to the organization, and the name is then in use for good — `make test-sweep` clears it.
 
-CI runs Databricks, BigQuery, AWS and Budget from `.github/workflows/e2e.yaml` against the deployed API with a dedicated test organization, taking credentials from GitHub secrets. Because one organization backs every run, the workflow serializes on a `concurrency` group and names each resource after the run id. Snowflake is excluded from CI for now: SELECT claims a Snowflake organization globally, not per SELECT org, and every test account currently available is already claimed elsewhere. `make test-snowflake` still works locally against a dedicated, unclaimed fixture. Budget needs no credentials of its own — creating one makes no call to an external system — so it joins the matrix without adding any secrets.
+CI runs Databricks, BigQuery, AWS, Budget, Usage Group and Team from `.github/workflows/e2e.yaml` against the deployed API with a dedicated test organization, taking credentials from GitHub secrets. Because one organization backs every run, the workflow serializes on a `concurrency` group and names each resource after the run id. Snowflake is excluded from CI for now: SELECT claims a Snowflake organization globally, not per SELECT org, and every test account currently available is already claimed elsewhere. `make test-snowflake` still works locally against a dedicated, unclaimed fixture. Budget needs no credentials of its own — creating one makes no call to an external system — so it joins the matrix without adding any secrets.

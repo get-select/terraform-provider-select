@@ -176,7 +176,9 @@ func (p *selectProvider) Metadata(ctx context.Context, req provider.MetadataRequ
 }
 
 func (p *selectProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewTeamDataSource,
+	}
 }
 
 func (p *selectProvider) Resources(ctx context.Context) []func() resource.Resource {
@@ -188,5 +190,7 @@ func (p *selectProvider) Resources(ctx context.Context) []func() resource.Resour
 		NewBigQueryConnectionResource,
 		NewAwsConnectionResource,
 		NewBudgetResource,
+		NewTeamResource,
+		NewTeamMemberResource,
 	}
 }
