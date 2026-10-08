@@ -67,7 +67,8 @@ func ssoGroupResourceSchema(ctx context.Context) schema.Schema {
 func ssoGroupRolesAttribute() schema.SetNestedAttribute {
 	return schema.SetNestedAttribute{
 		Required: true,
-		Description: "The roles that the group's members receive at their next login. At least one " +
+		Description: "The roles that the group's members receive. A change applies on each member's " +
+			"next request. At least one " +
 			"is required: SELECT does not keep a group with no roles. This set is authoritative: a " +
 			"role granted to the group outside Terraform shows as a change in the next plan. A change " +
 			"grants the new roles first and then revokes the removed roles, so the group always " +

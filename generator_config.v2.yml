@@ -577,9 +577,9 @@ resources:
               existing group under management.
           name:
             description: >-
-              The group name, exactly as your identity provider reports it. Members of
-              the identity provider group receive the roles at their next login.
-              Changes in place: SELECT renames the group and keeps its roles.
+              The group name, exactly as your identity provider reports it. SELECT
+              matches a user to the group at login, so a rename applies at each
+              member's next login. Changes in place: SELECT renames the group and keeps its roles.
           etag:
             description: >-
               Opaque strong ETag for this group. Sent as `If-Match` on renames and

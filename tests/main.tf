@@ -495,8 +495,8 @@ variable "team_role_on_usage_group" {
 # SSO group test variables.
 #
 # Like teams, an SSO group makes no call to an external system: SELECT stores
-# the name and gives its roles to the members of the identity provider group
-# at their next login. No identity provider group has the test name, so the
+# the name and gives its roles to the members of the identity provider group.
+# No identity provider group has the test name, so the
 # roles reach nobody. The suite makes its own usage group set, usage group and
 # team. It defaults to off so provider.tftest.hcl and `make test`/`test-all`
 # are unaffected.

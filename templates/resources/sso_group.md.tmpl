@@ -7,7 +7,7 @@
 
 Each `{{ .Name }}` maps one group from your identity provider to SELECT roles. Set `name` to the group name exactly as your identity provider sends it. The provider does not create the group in your identity provider.
 
-Members of the group receive the roles at their next login. A role change, a rename or a delete has no effect on a member until that member logs in again.
+SELECT reads the roles of the group on each request, so a role change applies on the member's next request. SELECT learns which groups a user is in when the user logs in, so a change to who is in the group, or a rename, applies at the member's next login.
 
 `roles` holds every role of the group. Each element is one `role` on one `scope`. Omit `scope` to grant the role on the whole organization. To grant it on one resource, set `scope.type` and `scope.id`. The set must hold at least one role, because SELECT does not keep a group with no roles. For this reason, the roles of an SSO group are part of this resource, and there is no separate role grant resource for an SSO group.
 

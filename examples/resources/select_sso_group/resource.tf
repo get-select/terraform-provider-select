@@ -21,8 +21,7 @@ resource "select_usage_group" "marketing" {
 }
 
 # Members of the "data-analysts" group in your identity provider receive these
-# roles at their next login. The name must match the group name that your
-# identity provider sends.
+# roles. The name must match the group name that your identity provider sends.
 resource "select_sso_group" "data_analysts" {
   name = "data-analysts"
 

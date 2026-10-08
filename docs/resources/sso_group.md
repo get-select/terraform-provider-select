@@ -1,13 +1,13 @@
 <!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
 # select_sso_group (Resource)
 
-A group from your identity provider, and the SELECT roles its members receive. Members receive the roles at their next login. The roles are part of this resource: SELECT requires at least one, so there is no separate role grant resource for an SSO group.
+A group from your identity provider, and the SELECT roles its members receive. A role change applies on each member's next request. A change to who is in the group, or a rename, applies at each member's next login. The roles are part of this resource: SELECT requires at least one, so there is no separate role grant resource for an SSO group.
 
 ## About
 
 Each `select_sso_group` maps one group from your identity provider to SELECT roles. Set `name` to the group name exactly as your identity provider sends it. The provider does not create the group in your identity provider.
 
-Members of the group receive the roles at their next login. A role change, a rename or a delete has no effect on a member until that member logs in again.
+SELECT reads the roles of the group on each request, so a role change applies on the member's next request. SELECT learns which groups a user is in when the user logs in, so a change to who is in the group, or a rename, applies at the member's next login.
 
 `roles` holds every role of the group. Each element is one `role` on one `scope`. Omit `scope` to grant the role on the whole organization. To grant it on one resource, set `scope.type` and `scope.id`. The set must hold at least one role, because SELECT does not keep a group with no roles. For this reason, the roles of an SSO group are part of this resource, and there is no separate role grant resource for an SSO group.
 
@@ -39,8 +39,7 @@ resource "select_usage_group" "marketing" {
 }
 
 # Members of the "data-analysts" group in your identity provider receive these
-# roles at their next login. The name must match the group name that your
-# identity provider sends.
+# roles. The name must match the group name that your identity provider sends.
 resource "select_sso_group" "data_analysts" {
   name = "data-analysts"
 
@@ -80,8 +79,8 @@ A team accepts an SSO group as a member. Use `select_team_member` with `type = "
 
 ### Required
 
-- `name` (String) The group name, exactly as your identity provider reports it. Members of the identity provider group receive the roles at their next login. Changes in place: SELECT renames the group and keeps its roles.
-- `roles` (Attributes Set) The roles that the group's members receive at their next login. At least one is required: SELECT does not keep a group with no roles. This set is authoritative: a role granted to the group outside Terraform shows as a change in the next plan. A change grants the new roles first and then revokes the removed roles, so the group always holds at least one role. (see [below for nested schema](#nestedatt--roles))
+- `name` (String) The group name, exactly as your identity provider reports it. SELECT matches a user to the group at login, so a rename applies at each member's next login. Changes in place: SELECT renames the group and keeps its roles.
+- `roles` (Attributes Set) The roles that the group's members receive. A change applies on each member's next request. At least one is required: SELECT does not keep a group with no roles. This set is authoritative: a role granted to the group outside Terraform shows as a change in the next plan. A change grants the new roles first and then revokes the removed roles, so the group always holds at least one role. (see [below for nested schema](#nestedatt--roles))
 
 ### Read-Only
 
