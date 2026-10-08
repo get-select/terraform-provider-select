@@ -6,7 +6,10 @@
 #
 # Attribute sensitivity is deliberately absent: specpatch derives it from the
 # OpenAPI document's x-terraform-sensitive markers, so marking a new secret in
-# the API masks it here with no change to this file.
+# the API masks it here with no change to this file. specpatch matches the
+# markers by property name only, so a marker on one schema masks every
+# attribute of that name. `sensitive: false` on an attribute undoes that for an
+# attribute that is not a secret (user_role.email).
 #
 # description_sources are the OpenAPI schemas a resource's descriptions are
 # recovered from, in priority order. The generator drops the description of every
@@ -458,6 +461,90 @@ resources:
       # change them.
       #
       # Deliberately not listed: etag, which changes by design.
+      id:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
+  team_role:
+    description: >-
+      One role granted to a team, on the whole organization or on one resource.
+      Every member of the team holds the role. Use one of these per grant.
+
+    description_sources:
+      - TeamRoleGrantCreateV2
+      - TeamRoleGrantV2
+
+    attributes:
+      # team_id is a path parameter on every route. TeamRoleGrantV2 does not
+      # carry it, so the generator makes it optional+computed, but a grant
+      # cannot be made without naming its team.
+      team_id:
+        computed_optional_required: required
+        requires_replace: true
+
+      # The API has no update route for a team role grant, so a new role has
+      # to replace the grant.
+      role:
+        requires_replace: true
+
+      # SELECT assigns these once, when the role is granted, and does not
+      # change them.
+      id:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
+  user_role:
+    description: >-
+      One role granted directly to a user, identified by email address, on the
+      whole organization or on one resource. Use one of these per grant.
+
+    description_sources:
+      - UserRoleGrantCreateV2
+      - UserRoleGrantV2
+
+    attributes:
+      # email is a path parameter on every route, and UserRoleGrantV2 does not
+      # carry it. UserRoleGrantUpdateV2 carries only role, so a new email has
+      # to replace the grant.
+      #
+      # JiraTokenConnectRequest marks its own `email` property
+      # x-terraform-sensitive, and specpatch matches the marker by name. A
+      # user's email address is not a secret, and select_team_member shows its
+      # identifier in a plan, so this attribute is not masked either.
+      email:
+        computed_optional_required: required
+        requires_replace: true
+        sensitive: false
+
+      # SELECT assigns these once, when the role is granted, and does not
+      # change them.
+      #
+      # Deliberately not listed: etag and update_time, which change by design.
+      id:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
+  default_role:
+    description: >-
+      One role that every member of the organization holds by default, on the
+      whole organization or on one resource. Use one of these per grant.
+
+    description_sources:
+      - DefaultRoleGrantCreateV2
+      - DefaultRoleGrantV2
+
+    attributes:
+      # The API has no update route for a default role grant, so a new role
+      # has to replace the grant.
+      role:
+        requires_replace: true
+
+      # SELECT assigns these once, when the role is granted. Nothing can
+      # update a default grant through this provider, but the API can still
+      # change the etag and update_time, so those two are not listed.
       id:
         use_state_for_unknown: true
       create_time:

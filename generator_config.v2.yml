@@ -408,3 +408,138 @@ resources:
             description: >-
               Opaque strong ETag for this membership. Sent as `If-Match` on updates and
               deletes so a change made outside Terraform cannot be silently overwritten.
+
+  # The three role grant resources share one grant shape: a role and an
+  # optional scope. The scope is hand-written (see role_grant_scope.go),
+  # because the request takes RoleGrantScope {type, id} but the response gives
+  # an entity object and three flat columns. All of these are ignored here, and
+  # each resource injects the hand-written scope attribute into its schema.
+  team_role:
+    create:
+      path: /teams/{team_id}/roles
+      method: POST
+    # The API has no GET for one team role grant. The read operation here
+    # only supplies the schema, and the create operation has the same response
+    # (TeamRoleGrantV2) and the same team_id path parameter. The resource
+    # reads a grant from the team's grant list. See team_role_resource.go.
+    read:
+      path: /teams/{team_id}/roles
+      method: POST
+    # No update: the API cannot change a team role grant, so every attribute
+    # forces a new grant.
+    delete:
+      path: /teams/{team_id}/roles/{role_id}
+      method: DELETE
+    schema:
+      ignores:
+        - scope
+        - entity
+        - snowflake_organization_name
+        - snowflake_account_uuid
+        - usage_group_id
+      attributes:
+        aliases:
+          role_id: id
+        overrides:
+          id:
+            description: >-
+              The grant's identifier in SELECT, assigned when the role is granted. Use it
+              with `terraform import`, as `team_id/id`, to bring an existing grant under
+              management.
+          team_id:
+            description: >-
+              The team to grant the role to. Every member of the team holds the role.
+              Changing it forces a new grant.
+          role:
+            description: >-
+              The role to grant: `admin`, `editor`, `monitor_editor`, `viewer` or
+              `team_creator`. A `usage_group` scope accepts only `viewer`. Changing it
+              forces a new grant.
+
+  user_role:
+    create:
+      path: /users/{email}/roles
+      method: POST
+    read:
+      path: /users/{email}/roles/{role_id}
+      method: GET
+    update:
+      path: /users/{email}/roles/{role_id}
+      method: PATCH
+    delete:
+      path: /users/{email}/roles/{role_id}
+      method: DELETE
+    schema:
+      # is_default and granted_from_team_name describe grants this resource
+      # does not manage: a grant it manages is always direct. See
+      # user_role_api.go.
+      ignores:
+        - scope
+        - entity
+        - snowflake_organization_name
+        - snowflake_account_uuid
+        - usage_group_id
+        - is_default
+        - granted_from_team_name
+      attributes:
+        aliases:
+          role_id: id
+        overrides:
+          id:
+            description: >-
+              The grant's identifier in SELECT, assigned when the role is granted. Use it
+              with `terraform import`, as `email/id`, to bring an existing grant under
+              management.
+          email:
+            description: >-
+              The email address of the user to grant the role to. The user does not have
+              to have signed in yet: the grant takes effect when they first sign in.
+              Changing it forces a new grant.
+          role:
+            description: >-
+              The role to grant: `admin`, `editor`, `monitor_editor`, `viewer` or
+              `team_creator`. Changes in place.
+          etag:
+            description: >-
+              Opaque strong ETag for this grant. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.
+
+  default_role:
+    create:
+      path: /default-roles
+      method: POST
+    # The API has no GET for one default role grant. As for team_role, the
+    # create operation supplies the schema, and the resource reads a grant
+    # from the list of default grants. See default_role_resource.go.
+    read:
+      path: /default-roles
+      method: POST
+    # No update: the API cannot change a default role grant, so every
+    # attribute forces a new grant.
+    delete:
+      path: /default-roles/{role_id}
+      method: DELETE
+    schema:
+      ignores:
+        - scope
+        - entity
+        - snowflake_organization_name
+        - snowflake_account_uuid
+        - usage_group_id
+      attributes:
+        aliases:
+          role_id: id
+        overrides:
+          id:
+            description: >-
+              The grant's identifier in SELECT, assigned when the role is granted. Use it
+              with `terraform import` to bring an existing grant under management.
+          role:
+            description: >-
+              The role every organization member holds: `admin`, `editor`,
+              `monitor_editor`, `viewer` or `team_creator`. Changing it forces a new
+              grant.
+          etag:
+            description: >-
+              Opaque strong ETag for this grant. Sent as `If-Match` on deletes so a
+              change made outside Terraform cannot be silently overwritten.

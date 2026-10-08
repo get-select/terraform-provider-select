@@ -12,7 +12,9 @@ need working credentials for the system being connected and are kept out of
 no call to an external system — SELECT stores the definition directly — so it
 needs nothing beyond the same API key every suite already uses. `team.tftest.hcl`
 is the same: it manages a real team, one member and the `select_team` data
-source, and calls no external system.
+source, and calls no external system. So is `role.tftest.hcl`: it grants a team
+role, a user role and a default role, on a team, usage group set and usage
+group it makes itself.
 
 ## Setup
 
@@ -41,8 +43,9 @@ make test-aws
 make test-connections  # all four
 make test-budget       # no credentials of its own; joins CI's e2e matrix
 make test-team         # no credentials of its own; joins CI's e2e matrix
+make test-role         # no credentials of its own; joins CI's e2e matrix
 make test-clean        # remove local state files
-make test-sweep        # delete connections, budgets, usage group sets and teams a failed run left behind
+make test-sweep        # delete connections, budgets, usage group sets, teams and role grants a failed run left behind
 ```
 
 Individual cases:
@@ -55,8 +58,10 @@ terraform test provider.tftest.hcl -filter=create_usage_group_set
 ## What the connection suites cover
 
 Each one walks a full create → update → delete cycle against the live API.
-`budget.tftest.hcl` and `team.tftest.hcl` follow the same shape, minus anything
-that depends on an external system:
+`budget.tftest.hcl`, `team.tftest.hcl` and `role.tftest.hcl` follow the same
+shape, minus anything that depends on an external system. A team role grant and
+a default role grant cannot change in place, so the role suite's update step
+replaces the team role grant instead:
 
 - **create** — the resource lands in state with what SELECT resolved from the
   system being connected, including the ETag every later write depends on, and
@@ -93,6 +98,7 @@ variables for the one you want to run.
 | AWS | `aws_connection_name`, `aws_payer_account_id`, `aws_s3_bucket`, `aws_s3_prefix`, `aws_region`, `aws_access_key_id`, `aws_secret_access_key` |
 | Budget | `budget_name` — nothing else; creating a budget makes no call to an external system |
 | Team | `team_name`, and optionally `team_member_email` — the user the suite adds to its team. CI reads it from the `TF_E2E_TEAM_MEMBER_EMAIL` repository variable |
+| Role | `role_name_prefix`, and optionally `role_user_email` — the email the suite grants a user role to. Keep it an address that belongs to no real user. CI sets a new one on every run, `terraform-test-<run id>-role-user@example.com` |
 
 One of these is not obvious: **`bigquery_service_account`** is not a credential
 this test holds. Access comes from the SELECT backend impersonating that service
@@ -100,9 +106,9 @@ account, so the grant lives in the target GCP project's IAM, not here.
 
 ## In CI
 
-`.github/workflows/e2e.yaml` runs the connection suites, budget, usage groups
-and teams as a matrix against the deployed API using a dedicated test
-organization — Databricks, BigQuery, AWS, Budget, Usage Group and Team. Credentials come from GitHub secrets mapped to the
+`.github/workflows/e2e.yaml` runs the connection suites, budget, usage groups,
+teams and role grants as a matrix against the deployed API using a dedicated test
+organization — Databricks, BigQuery, AWS, Budget, Usage Group, Team and Role. Credentials come from GitHub secrets mapped to the
 `TF_VAR_` names above — the same mechanism the select repo's `test-e2e.yaml`
 uses, though every secret here is its own copy rather than shared with it.
 select's equivalents are named `E2E_CREATE_*` because it also runs e2e tests
@@ -128,6 +134,17 @@ Two things keep runs from tripping over each other:
   group sets and teams included.
   A run cancelled mid-apply leaves a resource attached, and its name is then
   taken for good. `make test-sweep` runs the same script locally.
+- A role grant has no name to carry the run id. A team role grant goes with its
+  team. The script deletes a default role grant only when it is scoped to a
+  usage group in a set with the prefix, which is how the role suite scopes its
+  own. If it cannot delete such a grant, it keeps the set for that run, so a
+  later sweep can still find the grant. It deletes the direct grants of each
+  email in `CI_SWEEP_USER_EMAILS` that starts with the prefix. CI gives the
+  role suite a new email on every run, `terraform-test-<run id>-role-user@example.com`,
+  and the sweep after the role leg cleans it. A sweep cannot list the emails
+  of earlier runs, so a grant that one of them leaked stays. That is harmless:
+  the grant is on an example.com address that is not a user, and no later run
+  uses it.
 
 ## Troubleshooting
 
@@ -135,7 +152,9 @@ Two things keep runs from tripping over each other:
 Verify your environment variables. Each suite needs an API key with the read
 and write scopes for the resource in question — `snowflake_accounts:*`,
 `databricks_connections:*`, `bigquery_connections:*`, `aws_accounts:*`,
-`budgets:*`, `teams:*`.
+`budgets:*`, `teams:*`. The role suite also makes a usage group, so it needs
+the usage group scopes, and it needs `users:*` and `default_roles:*` (assumed
+names: the API spec does not name its scopes).
 
 ### `Error: Could not find required provider`
 Run `make install && make setup-dev-overrides`.

@@ -429,6 +429,20 @@ func v2Patch[TModel, TPayload any](build func(plan, state *TModel) TPayload) fun
 	}
 }
 
+// v2NoUpdate is the updatePayload for a resource that the API cannot update,
+// such as a team role grant. Every attribute of such a resource forces a new
+// resource, so Terraform does not call Update. If it does, this returns an
+// error and sends no request.
+func v2NoUpdate[TModel any](noun string) func(ctx context.Context, plan, state *TModel) (any, diag.Diagnostics) {
+	return func(ctx context.Context, plan, state *TModel) (any, diag.Diagnostics) {
+		return nil, diag.Diagnostics{diag.NewErrorDiagnostic(
+			"Unexpected "+noun+" Update",
+			"SELECT cannot update a "+noun+", so every change must replace it. "+
+				"Please report this issue to the provider developers.",
+		)}
+	}
+}
+
 // v2FalliblePatch adapts an update builder that can itself fail validation
 // (Snowflake's mode_token_secret invariant).
 func v2FalliblePatch[TModel, TPayload any](build func(ctx context.Context, plan, state *TModel) (TPayload, diag.Diagnostics)) func(ctx context.Context, plan, state *TModel) (any, diag.Diagnostics) {
