@@ -549,3 +549,15 @@ resources:
         use_state_for_unknown: true
       create_time:
         use_state_for_unknown: true
+
+  sso_group:
+    description: >-
+      A group from your identity provider, and the SELECT roles its members
+      receive. A role change applies on each member's next request. A change
+      to who is in the group, or a rename, applies at each member's next
+      login. The roles are part of this resource: SELECT requires at least one, so there is no
+      separate role grant resource for an SSO group.
+
+    description_sources:
+      - SsoGroupCreateV2
+      - SsoGroupV2

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 #
-# Delete connections, budgets, usage group sets, teams and role grants a test
-# run left attached to the organization.
+# Delete connections, budgets, usage group sets, teams, SSO groups and role
+# grants a test run left attached to the organization.
 #
 # `terraform test` destroys what it created, but a run cancelled mid-apply — or
 # one whose destroy the API refused — leaves a resource behind. The next run
@@ -30,11 +30,14 @@
 #     that an earlier run leaked stays. That is harmless: it is a grant to an
 #     example.com address that is not a user, and no later run uses the email.
 #
-# A team role grant needs no sweep: deleting the team deletes its grants.
+# A team role grant needs no sweep: deleting the team deletes its grants. An
+# SSO group's role grants need no sweep either: deleting the group deletes
+# them.
 #
 # Environment:
 #   SELECT_API_KEY          key with <resource>:read and :write for every
-#                           collection below, and for users and default_roles
+#                           collection below, and for users, default_roles and
+#                           sso_groups
 #   SELECT_ORGANIZATION_ID  organization the resources belong to
 #   SELECT_API_URL          defaults to https://api.select.dev
 #   CI_RESOURCE_PREFIX      defaults to terraform-test
@@ -258,11 +261,33 @@ sweep_user_roles() {
   done
 }
 
+# Delete every SSO group whose name starts with the prefix. The group's id is
+# its name, which can hold a "/" or a space, so the id is escaped as one path
+# segment. Deleting a group also deletes its role grants. This has to run
+# before the usage-group-sets sweep, as sweep_default_roles does: a test
+# group's grant can be scoped to a usage group in a test set, and that grant
+# can block the delete of the set.
+sweep_sso_groups() {
+  local groups escaped
+
+  if ! groups="$(list_items /sso-groups)"; then
+    failed=$((failed + 1))
+    return
+  fi
+  while IFS=$'\t' read -r id etag; do
+    [[ -n "$id" ]] || continue
+    escaped="$(jq -rn --arg id "$id" '$id | @uri')"
+    delete_item "/sso-groups/${escaped}" "$etag" "$id" || true
+  done < <(jq -r --arg prefix "$PREFIX" 'select(.name | startswith($prefix)) | [.id, .etag] | @tsv' <<<"$groups")
+}
+
 echo "Sweeping resources named '${PREFIX}*' from organization ${SELECT_ORGANIZATION_ID} at ${API_URL}"
 echo "default-roles:"
 sweep_default_roles
 echo "user roles:"
 sweep_user_roles
+echo "sso-groups:"
+sweep_sso_groups
 for collection in "${COLLECTIONS[@]}"; do
   echo "${collection}:"
   sweep_collection "$collection"

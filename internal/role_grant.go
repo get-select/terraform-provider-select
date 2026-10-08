@@ -24,6 +24,11 @@ import (
 // roleGrantViewer is the only role the API accepts on a usage_group scope.
 const roleGrantViewer = "viewer"
 
+// roleGrantRoles mirrors AccessRole, the roles a grant can give. The
+// generated schemas validate their own role attribute. A hand-written role
+// attribute, such as the role in an SSO group's roles set, uses this list.
+var roleGrantRoles = []string{"admin", "editor", "monitor_editor", "viewer", "team_creator"}
+
 // roleGrantCreatePayload mirrors the create request that every role grant
 // route takes: TeamRoleGrantCreateV2, UserRoleGrantCreateV2,
 // DefaultRoleGrantCreateV2 and SsoGroupRoleGrantCreateV2 have the same two

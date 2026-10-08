@@ -20,6 +20,7 @@ The SELECT Terraform provider supports importing existing resources that were cr
 - `select_team_role` - Team Role Grants
 - `select_user_role` - User Role Grants
 - `select_default_role` - Default Role Grants
+- `select_sso_group` - SSO Groups, with their roles
 
 ## Prerequisites
 
@@ -183,6 +184,16 @@ curl -s https://api.select.dev/v2/default-roles \
 ```
 
 A user's list holds every role the user has: direct grants, team-inherited grants (`granted_from_team_name` is set) and default grants (`is_default` is `true`). Only a direct grant can be imported as `select_user_role`.
+
+### SSO Group ID
+
+An SSO group's ID is its name, exactly as your identity provider sends it. There is nothing to look up if you know the name. To list the groups with the API:
+
+```bash
+curl -s https://api.select.dev/v2/sso-groups \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name}'
+```
 
 ## Converting Filter Expressions from JSON to Terraform
 
@@ -401,6 +412,22 @@ terraform import select_default_role.<resource_name> <role_id>
 ```bash
 terraform import select_default_role.everyone_views 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
 ```
+
+### Importing an SSO Group
+
+The import ID is the group name. A name can hold spaces or a forward slash, so put it in quotes. The import also reads every role of the group, so there is no separate import for its roles.
+
+**Command Format:**
+```bash
+terraform import select_sso_group.<resource_name> "<group name>"
+```
+
+**Example:**
+```bash
+terraform import select_sso_group.data_analysts "data-analysts"
+```
+
+**Note**: Put every role that SELECT holds for the group in `roles`. A role that is not in the configuration is revoked on the first `terraform apply`. The first plan can also show a change when the configuration gives a grant in a different form: a `scope.id` in a different case, or `scope.type = "organization"` where SELECT reports no scope. Applying that plan sends no request that changes a role.
 
 ## Step-by-Step Import Process
 

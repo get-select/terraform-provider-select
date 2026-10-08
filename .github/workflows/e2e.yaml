@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # End-to-end tests for the connection resources, for the budget resource, for
-# usage groups, for teams and for role grants.
+# usage groups, for teams, for role grants and for SSO groups.
 #
 # These apply against the deployed SELECT API using a dedicated test
 # organization, and each connection suite manages a real connection: creating
@@ -96,11 +96,11 @@ jobs:
         # dedicated, unclaimed fixture exists — see the TF_VAR_snowflake_*
         # variables below, which stay wired up for when that happens.
         #
-        # budget, usage-group, team and role need none of the credentials the
-        # other four do — creating any of them makes no call to an external
-        # system — so they join the matrix rather than getting their own
-        # workflow.
-        platform: [databricks, bigquery, aws, budget, usage-group, team, role]
+        # budget, usage-group, team, role and sso-group need none of the
+        # credentials the other four do — creating any of them makes no call
+        # to an external system — so they join the matrix rather than getting
+        # their own workflow.
+        platform: [databricks, bigquery, aws, budget, usage-group, team, role, sso-group]
 
     env:
       TF_VAR_select_api_key: ${{ secrets.TF_E2E_SELECT_API_KEY }}
@@ -168,6 +168,11 @@ jobs:
       # the leg finds them; a team's role grants go with the team. The user
       # email is set for the whole workflow, above.
       TF_VAR_role_name_prefix: terraform-test-${{ github.run_id }}-role
+
+      # SSO groups. No credentials of its own. The suite names its group, team,
+      # usage group set and usage group with this prefix, so the sweep after
+      # the leg finds them.
+      TF_VAR_sso_group_name_prefix: terraform-test-${{ github.run_id }}-sso-group
 
     steps:
       - name: Checkout
