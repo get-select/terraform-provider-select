@@ -39,13 +39,14 @@ provider "select" {
   organization_id = var.select_organization_id
 }
 
-# 1. SSO group. Members of the identity provider group receive these roles at
-# their next login. Without a scope, the role applies to the whole organization.
+# 1. SSO group. A role change applies on each member's next request. SELECT
+# requires at least one role. team_creator gives no access to data: the
+# members get their access to data from the team below.
 resource "select_sso_group" "analysts" {
   name = var.sso_group_name
 
   roles = [
-    { role = "viewer" },
+    { role = "team_creator" },
   ]
 }
 
@@ -68,6 +69,7 @@ resource "select_team_member" "analysts" {
   team_id    = select_team.analysts.id
   type       = "user"
   identifier = each.value
+  role       = "viewer"
 }
 
 # 3. Usage group set that belongs to the team, and its usage groups.
@@ -144,7 +146,8 @@ check "admins_are_users" {
   }
 }
 
-# 5. Default role. Every member of the organization can edit monitors.
-resource "select_default_role" "everyone_edits_monitors" {
-  role = "monitor_editor"
+# 5. Default role. Every member of the organization can create teams. Any other
+# role without a scope gives every member access to all data.
+resource "select_default_role" "everyone_creates_teams" {
+  role = "team_creator"
 }

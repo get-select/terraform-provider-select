@@ -18,19 +18,20 @@ A role grant works for an email address before that person signs in. SELECT keep
 
 ## Where a user's roles come from
 
-A user holds a role from one of three sources. Each source has its own resource.
+A user holds a role from one of four sources. Each source has its own resource.
 
 | Source | Who holds the role | Resource |
 | --- | --- | --- |
 | Direct | One user, by email address | [`select_user_role`](https://registry.terraform.io/providers/get-select/select/latest/docs/resources/user_role) |
 | Team | Every member of the team | [`select_team_role`](https://registry.terraform.io/providers/get-select/select/latest/docs/resources/team_role) |
 | Default | Every member of the organization | [`select_default_role`](https://registry.terraform.io/providers/get-select/select/latest/docs/resources/default_role) |
+| SSO group | Every member of the identity provider group | [`select_sso_group`](https://registry.terraform.io/providers/get-select/select/latest/docs/resources/sso_group) |
 
 Use [`select_team`](https://registry.terraform.io/providers/get-select/select/latest/docs/resources/team) to make a team, and [`select_team_member`](https://registry.terraform.io/providers/get-select/select/latest/docs/resources/team_member) to add one user or one SSO group to it. Use `for_each` over a set of email addresses to add many users. Then adding or removing an email address changes only that member.
 
 ### SSO groups
 
-[`select_sso_group`](https://registry.terraform.io/providers/get-select/select/latest/docs/resources/sso_group) maps a group from your identity provider to SELECT roles. Set `name` to the group name exactly as your identity provider sends it. The roles are part of the resource, in its `roles` set. Members of the group receive the group's roles at their next login. A change has no effect on a member until that member logs in again.
+[`select_sso_group`](https://registry.terraform.io/providers/get-select/select/latest/docs/resources/sso_group) maps a group from your identity provider to SELECT roles. Set `name` to the group name exactly as your identity provider sends it. The roles are part of the resource, in its `roles` set. A role change applies on each member's next request. A change to who is in the group, or a rename, applies at each member's next login.
 
 An SSO group can also be a member of a team. Then the members of the group also hold the roles of the team.
 
@@ -45,18 +46,20 @@ The [`select_users`](https://registry.terraform.io/providers/get-select/select/l
 ## What the provider does not manage
 
 - **Invitations.** The provider does not invite people. If a person cannot sign in through your identity provider, invite them in the SELECT app.
-- **User removal.** The provider does not remove a user from the organization. When you destroy a grant or a membership, SELECT revokes only that grant or membership.
+- **User removal.** The provider does not remove a user from the organization. When you destroy a grant or a membership, SELECT revokes only that grant or membership. When you delete a user in SELECT, SELECT also deletes every direct grant and team membership of their email address, including those that Terraform manages. The next apply then makes them again. When you delete a user, also remove their email address from your configuration.
 - **Batch endpoints.** The provider does not use `POST /v2/users/actions/batch-update-roles` or `POST /v2/teams/actions/batch-update-memberships`. Each batch endpoint replaces all of a user's direct grants or team memberships. That would conflict with the resources above, which manage one grant or one membership each. Do not use the batch endpoints for users that Terraform manages.
 
 ## Full example
 
 The example makes:
 
-1. An SSO group with the `viewer` role on the whole organization.
-2. A team with the SSO group and a set of email addresses as members.
-3. A usage group set that belongs to the team. The team gets `viewer` on each usage group in the set.
+1. An SSO group with the `team_creator` role. The role gives no access to data.
+2. A team with the SSO group and a set of email addresses as members. Each member has the `viewer` role in the team.
+3. A usage group set that belongs to the team. The team gets `viewer` on each usage group in the set. This is the only access to data that the SSO group and the analysts get.
 4. A direct `admin` grant for each admin email address, and a `check` block that warns when an admin email address is not a user yet.
-5. One default role for every member of the organization.
+5. One default role for every member of the organization: `team_creator`.
+
+An organization-wide role other than `team_creator` gives access to all data. Then a grant on one usage group adds nothing. Give the SSO group and the default role a narrow role or a scope, as this example does.
 
 ```terraform
 terraform {
@@ -100,13 +103,14 @@ provider "select" {
   organization_id = var.select_organization_id
 }
 
-# 1. SSO group. Members of the identity provider group receive these roles at
-# their next login. Without a scope, the role applies to the whole organization.
+# 1. SSO group. A role change applies on each member's next request. SELECT
+# requires at least one role. team_creator gives no access to data: the
+# members get their access to data from the team below.
 resource "select_sso_group" "analysts" {
   name = var.sso_group_name
 
   roles = [
-    { role = "viewer" },
+    { role = "team_creator" },
   ]
 }
 
@@ -129,6 +133,7 @@ resource "select_team_member" "analysts" {
   team_id    = select_team.analysts.id
   type       = "user"
   identifier = each.value
+  role       = "viewer"
 }
 
 # 3. Usage group set that belongs to the team, and its usage groups.
@@ -205,8 +210,9 @@ check "admins_are_users" {
   }
 }
 
-# 5. Default role. Every member of the organization can edit monitors.
-resource "select_default_role" "everyone_edits_monitors" {
-  role = "monitor_editor"
+# 5. Default role. Every member of the organization can create teams. Any other
+# role without a scope gives every member access to all data.
+resource "select_default_role" "everyone_creates_teams" {
+  role = "team_creator"
 }
 ```
