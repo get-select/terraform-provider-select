@@ -799,6 +799,20 @@ resource "select_default_role" "test" {
   }
 }
 
+# The users list is read-only. The role suite already needs the users scopes,
+# so it reads the list: once in full, and once filtered to the user role email
+# in upper case. That email is not a real user, so the filtered list can be
+# empty.
+data "select_users" "all" {
+  count = var.enable_role_tests ? 1 : 0
+}
+
+data "select_users" "role_user" {
+  count = var.enable_role_tests ? 1 : 0
+
+  emails = [upper(var.role_user_email)]
+}
+
 # An SSO group with two roles: one on the whole organization, and viewer on
 # the suite's own usage group. A team takes the group as a member by its name.
 # count keeps them out of the way of every other test.

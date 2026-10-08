@@ -1,0 +1,18 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Data Source)
+
+{{ .Description | trimspace }}
+
+## About
+
+The data source lists all users of the organization, on all pages. The API has no filter, so the provider applies the `emails` filter after it gets the list. The filter compares email addresses without case.
+
+An email address in `emails` that belongs to no user does not cause an error: it is not in `users`. A role grant works for an email address before that person signs in, so a missing user is not always a problem. To find the missing email addresses, compare `emails` with the email addresses in `users`, as in the example below. Use a `precondition` to stop the apply, or a `check` block to give a warning. The [user admin guide](https://registry.terraform.io/providers/get-select/select/latest/docs/guides/user-admin) shows a `check` block.
+
+This data source is backed by SELECT's v2 API, at `/v2/users`.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}

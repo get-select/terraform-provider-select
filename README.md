@@ -50,6 +50,9 @@ This ensures the provider stays in sync with SELECT's API automatically.
 | Data Source | API |
 | --- | --- |
 | `select_team` | v2 |
+| `select_users` | v2 |
+
+To manage users and roles, see the user admin guide (`docs/guides/user-admin.md`). Its example is `examples/guides/user_admin/main.tf`.
 
 Each v2 resource needs an API key carrying that resource's own scopes: `snowflake_accounts:read` and `snowflake_accounts:write` for Snowflake accounts, `databricks_connections:read` and `databricks_connections:write` for Databricks connections, `bigquery_connections:read` and `bigquery_connections:write` for BigQuery connections, `aws_accounts:read` and `aws_accounts:write` for AWS connections.
 

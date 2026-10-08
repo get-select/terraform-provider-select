@@ -29,7 +29,7 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `make test-connections` - All four connection suites
 - `make test-budget` - Budget tests; creates no real connection, so it needs only the same API key every suite already uses
 - `make test-team` - Team, team member and team data source tests; like budget, needs only the API key
-- `make test-role` - Team role, user role and default role grant tests; like budget, needs only the API key
+- `make test-role` - Team role, user role and default role grant tests, and a read of the users data source; like budget, needs only the API key
 - `make test-sso-group` - SSO group tests (inline roles, rename, a team member of type `sso_group`); like budget, needs only the API key
 - `make test-sweep` - Delete connections, budgets, usage group sets, teams, SSO groups and role grants a failed run left attached to the organization
 - `make test-clean` - Clean up test state files
@@ -117,7 +117,8 @@ internal/
 ├── user_role_resource.go / user_role_api.go       # User role grant: direct grants only; a default or team-inherited grant reads as gone
 ├── default_role_resource.go / default_role_api.go # Default role grant: no GET-by-id, no update
 ├── sso_group_resource.go / sso_group_api.go       # SSO group with an inline roles set; hand-written CRUD, not a v2Resource
-└── team_data_source.go               # select_team data source: look up a team by exact name
+├── team_data_source.go               # select_team data source: look up a team by exact name
+└── users_data_source.go              # select_users data source: list all users, optional email filter (no case)
 ```
 
 ### How Resources Work
@@ -235,6 +236,7 @@ The v2 surface differs from v1 in ways the client has to honour:
 - **An SSO group carries its roles inline.** `POST /sso-groups` needs at least one role and the API refuses to revoke the last one, so `select_sso_group` has a `roles` set and there is no SSO group role resource. It is hand-written, not a `v2Resource`: Read is two requests (get the group, list its roles), the group's id is its name so a rename changes the URL, and an update is many requests. Update renames first (PATCH with `If-Match`) and writes the new id to state at once, then grants the added roles, then revokes the removed roles, so the group never has zero roles, then gets the group for its new ETag and lists the roles. State then takes the plan; a role list that differs from the plan gives a warning, not state that differs from the plan, which Terraform would report as a provider bug. A failed step writes what SELECT holds after the steps before it; when a grant or revoke fails ambiguously (`ambiguousWrite`: no response, unreadable body, 5xx), Update lists the roles again and saves those instead. A team membership change also rotates the group's ETag, and Terraform destroys a replaced `select_team_member` before it renames or deletes the group. So on a 412 from the rename or the delete, `writeGroup` reads the group and retries once with the fresh ETag when `ssoGroupUnchangedSince` says the name and the managed roles are still the ones in state; a real change still gets the 412 (same idea as "Recording a version rotates the set's ETag" below). A rename that fails with a 5xx or no readable response can still have happened, so Update moves state to the new name only when the old name answers 404 and the new name holds a group. A set element holds only `role` and `scope`, with no grant id: a computed value in an element is unknown at plan time and makes every plan replace the element. The roles list also holds the group's team memberships as grants with `entity.type = "team"`; `listRoles` drops them (`ssoGroupManagedGrants`), because `select_team_member` manages them and a scope cannot express a team. Roles are compared by role, scope type and scope id without case, so a case-only change sends nothing, and Read pairs each listed grant with its configured element to keep the configured form.
 - **Lists are paginated.** Use `v2ListAll` / `v2FindInList` from `v2_list.go`; they send `max_results` and follow `page_token` until it is empty.
 - **Data sources are hand-written.** The generator builds a data source only from a GET-by-id route, and a lookup by name has none. `v2DataSource` supplies Configure/Metadata/Schema/Read; a data source gives it a schema and a lookup function.
+- **The user admin guide is a template.** `templates/guides/user-admin.md.tmpl` embeds the full root module `examples/guides/user_admin/main.tf`; `make docs` writes `docs/guides/user-admin.md`. `make test-validate` runs `terraform validate` on that module and `terraform fmt -check` on `examples/guides` and `examples/data-sources`, so a schema change that breaks the example fails CI.
 - **`doRequest` returns the status.** `doJSONRequest` flattens everything into diagnostics (and reports a 404 as a warning) for the v1 resources; callers that need to act on a status, such as removing a deleted resource from state, use `doRequest` directly.
 
 ## Testing Notes
