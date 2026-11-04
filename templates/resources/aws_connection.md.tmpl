@@ -9,6 +9,8 @@ An AWS connection is how SELECT reads one AWS payer account's spend: the S3 buck
 
 This resource is backed by SELECT's v2 API, where the underlying resource is called an AWS account and lives at `/v2/aws-accounts`. The `api_key` configured on the provider must carry the `aws_accounts:read` and `aws_accounts:write` scopes; without them every operation fails with an authorization error.
 
+The Terraform attribute remains `payer_account_id` for compatibility with existing configuration and state. The provider sends it as `aws_account_id` to the API. It is separate from `id`, the connection identifier assigned by SELECT.
+
 ## Example Usage
 
 {{ tffile .ExampleFile }}

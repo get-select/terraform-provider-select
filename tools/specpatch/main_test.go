@@ -197,3 +197,40 @@ func TestRejectsUnknownDescriptionSource(t *testing.T) {
 		t.Fatalf("expected an error naming the unknown schema, got: %v", err)
 	}
 }
+
+// API property renames must not force existing Terraform configurations and
+// state to rename the same attribute. Keep descriptions tied to the API name.
+func TestRenamesAttributeAfterRestoringDescription(t *testing.T) {
+	specPath, codeSpecPath, overridesPath := fixture(t,
+		specWithNullableAndSecret, codeSpecWithMissingDescriptions,
+		`resources:
+  widget:
+    description_sources: [WidgetCreate, Widget]
+    attributes:
+      nickname:
+        rename_to: display_name
+`)
+	if err := run(specPath, codeSpecPath, overridesPath); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	attributes := readCodeSpec(t, codeSpecPath)
+	if _, exists := attributes["nickname"]; exists {
+		t.Fatal("the API name should not remain in the Terraform schema")
+	}
+	if got := attributes["display_name"]["description"]; got != "What to call it." {
+		t.Errorf("description = %v, want the source API property's description", got)
+	}
+}
+
+func TestRejectsInvalidAttributeRename(t *testing.T) {
+	for _, target := range []string{`""`, `id`, `true`} {
+		t.Run(target, func(t *testing.T) {
+			specPath, codeSpecPath, overridesPath := fixture(t,
+				specWithNullableAndSecret, codeSpecWithMissingDescriptions,
+				"resources:\n  widget:\n    attributes:\n      nickname:\n        rename_to: "+target+"\n")
+			if err := run(specPath, codeSpecPath, overridesPath); err == nil {
+				t.Fatalf("rename to %s should fail instead of emitting an invalid or duplicate attribute", target)
+			}
+		})
+	}
+}

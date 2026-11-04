@@ -280,6 +280,10 @@ resources:
       - AwsAccount
 
     attributes:
+      # Keep the released Terraform attribute name when the API field changes.
+      aws_account_id:
+        rename_to: payer_account_id
+
       # Nothing here is marked requires_replace, unlike every other v2 connection.
       # AwsAccountCreate and AwsAccountUpdate cover exactly the same fields, so
       # there is no creation-only value a change would have to replace the

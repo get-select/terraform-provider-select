@@ -332,6 +332,7 @@ func (p *patcher) patchAll(codeSpec map[string]any) error {
 // OpenAPI schema nodes corresponding to the current level.
 func (p *patcher) patchAttributes(resource, prefix string, attributes any, sources []any) error {
 	list, _ := attributes.([]any)
+	names := map[string]bool{}
 	for _, entry := range list {
 		attribute := asMap(entry)
 		name, _ := attribute["name"].(string)
@@ -355,9 +356,15 @@ func (p *patcher) patchAttributes(resource, prefix string, attributes any, sourc
 			body["sensitive"] = true
 			p.markedSensitive++
 		}
-		if err := p.applyOverride(resource, path, typeKey, body); err != nil {
+		if err := p.applyOverride(resource, path, typeKey, attribute, body); err != nil {
 			return err
 		}
+
+		finalName := attribute["name"].(string)
+		if names[finalName] {
+			return fmt.Errorf("%s.%s: duplicate attribute name %q", resource, path, finalName)
+		}
+		names[finalName] = true
 
 		if err := p.patchAttributes(resource, path, nestedAttributes(body), childSources); err != nil {
 			return err
@@ -396,13 +403,19 @@ func (p *patcher) restoreDescription(resource, path, name string, body map[strin
 	return childSources
 }
 
-func (p *patcher) applyOverride(resource, path, typeKey string, body map[string]any) error {
+func (p *patcher) applyOverride(resource, path, typeKey string, attribute, body map[string]any) error {
 	override, ok := p.config.Resources[resource].Attributes[path]
 	if !ok {
 		return nil
 	}
 	for key, value := range override {
 		switch key {
+		case "rename_to":
+			name, ok := value.(string)
+			if !ok || strings.TrimSpace(name) == "" {
+				return fmt.Errorf("%s.%s: rename_to must be a non-empty string", resource, path)
+			}
+			attribute["name"] = name
 		case "requires_replace":
 			if value == true {
 				modifier, err := planModifier(typeKey, "RequiresReplace()")

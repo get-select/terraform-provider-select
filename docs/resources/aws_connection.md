@@ -9,6 +9,8 @@ An AWS connection is how SELECT reads one AWS payer account's spend: the S3 buck
 
 This resource is backed by SELECT's v2 API, where the underlying resource is called an AWS account and lives at `/v2/aws-accounts`. The `api_key` configured on the provider must carry the `aws_accounts:read` and `aws_accounts:write` scopes; without them every operation fails with an authorization error.
 
+The Terraform attribute remains `payer_account_id` for compatibility with existing configuration and state. The provider sends it as `aws_account_id` to the API. It is separate from `id`, the connection identifier assigned by SELECT.
+
 ## Example Usage
 
 ```terraform
@@ -57,9 +59,9 @@ resource "select_aws_connection" "sandbox" {
 
 - `credentials` (Attributes) The IAM user SELECT authenticates as when it reads the Cost and Usage Report. The secret in this block is stored in a secret store and never returned by the API, so SELECT cannot detect changes made to it outside Terraform. (see [below for nested schema](#nestedatt--credentials))
 - `name` (String) Display name for the account, as shown throughout SELECT.
-- `payer_account_id` (String) The 12-digit AWS account id of the payer account SELECT reads spend for.
+- `payer_account_id` (String) The 12-digit id of the AWS account that created the Cost and Usage Report export: the payer account, or a member account exporting its own usage.
 - `region` (String) The AWS region the bucket is in, such as `us-east-1`. SELECT reads the bucket through this region's S3 endpoint.
-- `s3_bucket` (String) The S3 bucket AWS delivers this payer account's Cost and Usage Report to.
+- `s3_bucket` (String) The S3 bucket AWS delivers this account's Cost and Usage Report to.
 
 ### Optional
 

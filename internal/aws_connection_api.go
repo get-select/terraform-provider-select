@@ -34,9 +34,9 @@ var awsConnectionErrors = v2ErrorFormat{
 // covers more than one situation. Both carry the same issue, already_connected,
 // so the field is what tells them apart.
 const (
-	fieldPayerAccountId = "payer_account_id"
-	fieldS3Bucket       = "s3_bucket"
-	fieldName           = "name"
+	fieldAwsAccountId = "aws_account_id"
+	fieldS3Bucket     = "s3_bucket"
+	fieldName         = "name"
 )
 
 // awsCredentialsPayload mirrors the API's AwsCredentials. Both fields are
@@ -47,13 +47,16 @@ type awsCredentialsPayload struct {
 	SecretAccessKey string `json:"secret_access_key"`
 }
 
+// Terraform keeps payer_account_id for existing configurations and state. The
+// API calls it aws_account_id; the JSON tags translate that boundary.
+//
 // awsConnectionCreatePayload mirrors AwsAccountCreate. sync_enabled has a schema
 // default, so the plan always carries a value for it and there is nothing to
 // omit; s3_prefix is the one genuinely optional field, and omitting it means the
 // same thing as sending null on a create.
 type awsConnectionCreatePayload struct {
 	Name           string                `json:"name"`
-	PayerAccountId string                `json:"payer_account_id"`
+	PayerAccountId string                `json:"aws_account_id"`
 	S3Bucket       string                `json:"s3_bucket"`
 	S3Prefix       *string               `json:"s3_prefix,omitempty"`
 	Region         string                `json:"region"`
@@ -68,10 +71,10 @@ type awsConnectionCreatePayload struct {
 // and BigQuery payloads use and for the same two reasons:
 //
 //   - s3_prefix is the only thing on this resource that can be cleared. The API
-//     rejects an explicit null for name, payer_account_id, s3_bucket, region,
+//     rejects an explicit null for name, aws_account_id, s3_bucket, region,
 //     credentials and sync_enabled outright, so for those there is no removal
 //     that has to reach the API as a null.
-//   - SELECT re-validates against S3 when payer_account_id, s3_bucket,
+//   - SELECT re-validates against S3 when aws_account_id, s3_bucket,
 //     s3_prefix, region or credentials are *present* in the patch, not when they
 //     change. Sending them unconditionally would turn renaming a connection into
 //     a live round trip to S3 that an AWS outage could fail. Omitting credentials
@@ -84,7 +87,7 @@ type awsConnectionCreatePayload struct {
 // *string collapses the first two.
 type awsConnectionUpdatePayload struct {
 	Name           *string                `json:"name,omitempty"`
-	PayerAccountId *string                `json:"payer_account_id,omitempty"`
+	PayerAccountId *string                `json:"aws_account_id,omitempty"`
 	S3Bucket       *string                `json:"s3_bucket,omitempty"`
 	S3Prefix       *nullableString        `json:"s3_prefix,omitempty"`
 	Region         *string                `json:"region,omitempty"`
@@ -100,7 +103,7 @@ type awsConnectionResponse struct {
 	Etag                   string  `json:"etag"`
 	Name                   string  `json:"name"`
 	ConnectionId           string  `json:"connection_id"`
-	PayerAccountId         string  `json:"payer_account_id"`
+	PayerAccountId         string  `json:"aws_account_id"`
 	S3Bucket               string  `json:"s3_bucket"`
 	S3Prefix               *string `json:"s3_prefix"`
 	Region                 string  `json:"region"`

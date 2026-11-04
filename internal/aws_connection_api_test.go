@@ -4,6 +4,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -46,12 +47,12 @@ func TestAwsCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 	payload := marshal(t, buildAwsConnectionCreate(&plan))
 
 	for field, expected := range map[string]any{
-		"name":             "Acme Production",
-		"payer_account_id": "123456789012",
-		"s3_bucket":        "acme-cur",
-		"s3_prefix":        "reports/prod",
-		"region":           "us-east-1",
-		"sync_enabled":     true,
+		"name":           "Acme Production",
+		"aws_account_id": "123456789012",
+		"s3_bucket":      "acme-cur",
+		"s3_prefix":      "reports/prod",
+		"region":         "us-east-1",
+		"sync_enabled":   true,
 	} {
 		if payload[field] != expected {
 			t.Errorf("%s should be %v, got %v", field, expected, payload[field])
@@ -96,7 +97,7 @@ func TestAwsUpdatePayloadOmitsUnchangedAccessFields(t *testing.T) {
 		t.Errorf("the changed name should be sent, got %v", payload["name"])
 	}
 	for _, field := range []string{
-		"payer_account_id", "s3_bucket", "s3_prefix", "region", "credentials", "sync_enabled",
+		"aws_account_id", "s3_bucket", "s3_prefix", "region", "credentials", "sync_enabled",
 	} {
 		if _, present := payload[field]; present {
 			t.Errorf("%s did not change and should have been omitted, got %v", field, payload[field])
@@ -108,11 +109,18 @@ func TestAwsUpdatePayloadSendsChangedFields(t *testing.T) {
 	state := awsConnection()
 	plan := awsConnection()
 	plan.Region = types.StringValue("eu-west-1")
+	plan.PayerAccountId = types.StringValue("210987654321")
 	plan.Credentials = awsCredentials("AKIAEXAMPLETWO", "secret-two")
 	plan.SyncEnabled = types.BoolValue(false)
 
 	payload := marshal(t, buildAwsConnectionUpdate(&plan, &state))
 
+	if payload["aws_account_id"] != "210987654321" {
+		t.Errorf("the changed AWS account should use the API field, got %v", payload)
+	}
+	if _, present := payload["payer_account_id"]; present {
+		t.Error("the Terraform attribute name must not be sent to the API")
+	}
 	if payload["region"] != "eu-west-1" {
 		t.Errorf("the changed region should be sent, got %v", payload["region"])
 	}
@@ -150,7 +158,7 @@ func TestAwsUpdatePayloadClearsPrefixWithExplicitNull(t *testing.T) {
 	if value != nil {
 		t.Errorf("s3_prefix should be null, got %v", value)
 	}
-	for _, field := range []string{"name", "payer_account_id", "s3_bucket", "region", "credentials", "sync_enabled"} {
+	for _, field := range []string{"name", "aws_account_id", "s3_bucket", "region", "credentials", "sync_enabled"} {
 		if _, present := payload[field]; present {
 			t.Errorf("%s did not change and should have been omitted, got %v", field, payload[field])
 		}
@@ -269,7 +277,7 @@ func TestAwsConflictDiagnosticsDifferByField(t *testing.T) {
 	payer := awsConnectionAPIDiagnostic("add the AWS connection", newAPIError(409, `{
 		"detail": "AWS payer account '123456789012' is already connected via 'Acme'.",
 		"code": "conflict",
-		"details": [{"field": "payer_account_id", "issue": "already_connected"}]
+		"details": [{"field": "aws_account_id", "issue": "already_connected"}]
 	}`))
 	if !strings.Contains(payer.Detail(), "terraform import") {
 		t.Errorf("an already-connected payer account should point at import, got: %s", payer.Detail())
@@ -314,5 +322,29 @@ func TestAwsCredentialStoreUnavailableIsRetryable(t *testing.T) {
 
 	if !strings.Contains(unavailable.Detail(), "again") {
 		t.Errorf("a transient failure should tell the user to retry, got: %s", unavailable.Detail())
+	}
+}
+
+// The SELECT resource UUID and AWS account number have different meanings.
+// Refresh must preserve both while keeping the released Terraform field name.
+func TestAwsResponseMapsApiAccountToTerraformState(t *testing.T) {
+	var response awsConnectionResponse
+	if err := json.Unmarshal([]byte(`{"id":"2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01","aws_account_id":"210987654321"}`), &response); err != nil {
+		t.Fatal(err)
+	}
+	state := awsConnection()
+	model := awsConnection()
+	if diags := applyAwsConnectionResponse(context.Background(), &model, &state, &response); diags.HasError() {
+		t.Fatal(diags)
+	}
+	if model.PayerAccountId.ValueString() != "210987654321" || model.Id.ValueString() != response.Id {
+		t.Fatalf("refresh mixed the account number and resource ID: %v", model)
+	}
+	schema := resource_aws_connection.AwsConnectionResourceSchema(context.Background())
+	if !schema.Attributes["payer_account_id"].IsRequired() || !schema.Attributes["id"].IsComputed() {
+		t.Fatal("the AWS account number must remain configurable and the SELECT resource ID computed")
+	}
+	if _, exists := schema.Attributes["aws_account_id"]; exists {
+		t.Fatal("the API rename must not introduce a new Terraform attribute")
 	}
 }
