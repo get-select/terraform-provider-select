@@ -205,6 +205,14 @@ resources:
       billing_account_id:
         computed_optional_required: optional
 
+      # Unlike the two fields above, billing_project_id can be cleared on any
+      # connection: null moves SELECT to reading the exports from gcp_project_id.
+      # Plain optional is what makes removing it from a configuration reach the
+      # API as that null, the same reasoning as the AWS connection's s3_prefix.
+      # SELECT stores it exactly as given and returns it unchanged.
+      billing_project_id:
+        computed_optional_required: optional
+
       # SELECT assigns or resolves each of these once and does not change it on an
       # unrelated update. Holding them from state keeps them out of "known after
       # apply" on every other change.

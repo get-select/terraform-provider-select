@@ -37,6 +37,7 @@ resource "select_bigquery_connection" "production" {
 
 - `bigquery_dataset_id` (String) The BigQuery dataset holding the project's billing and pricing exports. Letters, digits and underscores only.
 - `billing_account_id` (String) The Cloud Billing account the exports belong to, in `XXXXXX-XXXXXX-XXXXXX` form, case-insensitive.
+- `billing_project_id` (String) The GCP project holding `bigquery_dataset_id`, when it differs from `gcp_project_id`, the project BigQuery work runs in. Omit it when the exports live in `gcp_project_id`. Must be omitted when `is_doit` is true.
 - `query_sanitization_enabled` (Boolean) Whether query text is sanitized before SELECT stores it.
 - `sync_enabled` (Boolean) Whether SELECT starts syncing data for this connection.
 

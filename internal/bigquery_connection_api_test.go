@@ -49,15 +49,32 @@ func TestBigQueryCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 	if _, present := payload["is_doit"]; present {
 		t.Errorf("is_doit is out of this resource's scope and should never be sent, got %v", payload["is_doit"])
 	}
+	if _, present := payload["billing_project_id"]; present {
+		t.Errorf("an unset billing_project_id should be omitted, got %v", payload["billing_project_id"])
+	}
+}
+
+func TestBigQueryCreatePayloadSendsBillingProject(t *testing.T) {
+	plan := bigQueryConnection()
+	plan.BillingProjectId = types.StringValue("acme-billing")
+
+	payload := marshal(t, buildBigQueryConnectionCreate(&plan))
+
+	if payload["billing_project_id"] != "acme-billing" {
+		t.Errorf("billing_project_id should be sent, got %v", payload["billing_project_id"])
+	}
 }
 
 // SELECT re-validates against BigQuery whenever gcp_project_id,
-// bigquery_dataset_id, billing_account_id or service_account are present in the
-// patch — present, not changed. A rename must therefore leave all four out, or
-// renaming a connection would depend on BigQuery being reachable.
+// bigquery_dataset_id, billing_account_id, billing_project_id or service_account
+// are present in the patch — present, not changed. A rename must therefore leave
+// all five out, or renaming a connection would depend on BigQuery being
+// reachable.
 func TestBigQueryUpdatePayloadOmitsUnchangedAccessFields(t *testing.T) {
 	state := bigQueryConnection()
+	state.BillingProjectId = types.StringValue("acme-billing")
 	plan := bigQueryConnection()
+	plan.BillingProjectId = types.StringValue("acme-billing")
 	plan.Name = types.StringValue("Acme Production (EU)")
 
 	payload := marshal(t, buildBigQueryConnectionUpdate(&plan, &state))
@@ -66,8 +83,8 @@ func TestBigQueryUpdatePayloadOmitsUnchangedAccessFields(t *testing.T) {
 		t.Errorf("the changed name should be sent, got %v", payload["name"])
 	}
 	for _, field := range []string{
-		"gcp_project_id", "bigquery_dataset_id", "billing_account_id", "service_account",
-		"sync_enabled", "query_sanitization_enabled",
+		"gcp_project_id", "bigquery_dataset_id", "billing_account_id", "billing_project_id",
+		"service_account", "sync_enabled", "query_sanitization_enabled",
 	} {
 		if _, present := payload[field]; present {
 			t.Errorf("%s did not change and should have been omitted, got %v", field, payload[field])
@@ -95,10 +112,32 @@ func TestBigQueryUpdatePayloadSendsChangedFields(t *testing.T) {
 	}
 }
 
-// The API rejects null for every field this resource can patch — this resource
-// never sets is_doit, so bigquery_dataset_id and billing_account_id are always
-// on a non-DoiT connection, where the API refuses to clear either one — so a
-// patch that clears nothing must contain nothing rather than an explicit null.
+// Removing billing_project_id from the configuration has to reach the API as an
+// explicit null, which moves SELECT to reading the exports from gcp_project_id.
+func TestBigQueryUpdatePayloadClearsBillingProjectWithExplicitNull(t *testing.T) {
+	state := bigQueryConnection()
+	state.BillingProjectId = types.StringValue("acme-billing")
+	plan := bigQueryConnection()
+
+	payload := marshal(t, buildBigQueryConnectionUpdate(&plan, &state))
+
+	value, present := payload["billing_project_id"]
+	if !present {
+		t.Fatalf("clearing billing_project_id has to reach the API as an explicit null, but the field was omitted")
+	}
+	if value != nil {
+		t.Errorf("billing_project_id should be null, got %v", value)
+	}
+	if len(payload) != 1 {
+		t.Errorf("only billing_project_id changed, got %v", payload)
+	}
+}
+
+// The API rejects null for every other field this resource can patch — this
+// resource never sets is_doit, so bigquery_dataset_id and billing_account_id are
+// always on a non-DoiT connection, where the API refuses to clear either one —
+// so a patch that clears nothing must contain nothing rather than an explicit
+// null.
 func TestBigQueryUpdatePayloadNeverSendsNull(t *testing.T) {
 	state := bigQueryConnection()
 	plan := bigQueryConnection()
@@ -119,6 +158,8 @@ func TestBigQueryUpdatePayloadNeverSendsNull(t *testing.T) {
 func TestBigQueryApplyResponsePreservesBillingAccountFold(t *testing.T) {
 	source := bigQueryConnection()
 	model := bigQueryConnection()
+	// Computed attributes reach apply as unknown; every one must leave it known.
+	model.BillingProjectId = types.StringUnknown()
 
 	orgId := "123456789012"
 	orgName := "acme.com"
@@ -149,6 +190,9 @@ func TestBigQueryApplyResponsePreservesBillingAccountFold(t *testing.T) {
 
 	if model.BillingAccountId.ValueString() != "0123ab-4567cd-89ef01" {
 		t.Errorf("billing_account_id should keep its configured lower-case spelling, got %v", model.BillingAccountId)
+	}
+	if !model.BillingProjectId.IsNull() {
+		t.Errorf("billing_project_id is absent from the response, so state should record null, got %v", model.BillingProjectId)
 	}
 	if model.Etag.ValueString() != `"def456"` {
 		t.Errorf("the response's ETag should land in state, got %v", model.Etag)
