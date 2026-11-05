@@ -272,7 +272,7 @@ resources:
 
   aws_connection:
     description: >-
-      A connection to one AWS payer account: the S3 location AWS delivers its Cost
+      A connection to one AWS account: the S3 location AWS delivers its Cost
       and Usage Report to, and the IAM user SELECT reads that report as.
 
     description_sources:
@@ -283,7 +283,7 @@ resources:
       # Nothing here is marked requires_replace, unlike every other v2 connection.
       # AwsAccountCreate and AwsAccountUpdate cover exactly the same fields, so
       # there is no creation-only value a change would have to replace the
-      # connection over — not even payer_account_id, which the API moves in place
+      # connection over — not even aws_account_id, which the API moves in place
       # and merely revalidates against S3.
 
       # s3_prefix is the one field on this resource the API lets you clear, and

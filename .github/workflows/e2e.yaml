@@ -139,7 +139,7 @@ jobs:
 
       # AWS.
       TF_VAR_aws_connection_name: terraform-test-${{ github.run_id }}-aws
-      TF_VAR_aws_payer_account_id: ${{ secrets.TF_E2E_AWS_PAYER_ACCOUNT_ID }}
+      TF_VAR_aws_account_id: ${{ secrets.TF_E2E_AWS_PAYER_ACCOUNT_ID }}
       TF_VAR_aws_s3_bucket: ${{ secrets.TF_E2E_AWS_S3_BUCKET }}
       TF_VAR_aws_s3_prefix: ${{ secrets.TF_E2E_AWS_S3_PREFIX }}
       TF_VAR_aws_region: ${{ secrets.TF_E2E_AWS_REGION }}

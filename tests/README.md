@@ -99,7 +99,7 @@ variables for the one you want to run.
 | Snowflake | `snowflake_account_id`, `snowflake_account_name`, `snowflake_username`, `snowflake_private_key`, `snowflake_role`, `snowflake_warehouse`, `snowflake_export_storage_integration_name` |
 | Databricks | `databricks_connection_name`, `databricks_account_id`, `databricks_workspace_url`, `databricks_warehouse_id`, `databricks_client_id`, `databricks_client_secret` |
 | BigQuery | `bigquery_connection_name`, `bigquery_gcp_project_id`, `bigquery_dataset_id`, `bigquery_billing_account_id`, `bigquery_service_account` |
-| AWS | `aws_connection_name`, `aws_payer_account_id`, `aws_s3_bucket`, `aws_s3_prefix`, `aws_region`, `aws_access_key_id`, `aws_secret_access_key` |
+| AWS | `aws_connection_name`, `aws_account_id`, `aws_s3_bucket`, `aws_s3_prefix`, `aws_region`, `aws_access_key_id`, `aws_secret_access_key` |
 | Budget | `budget_name` — nothing else; creating a budget makes no call to an external system |
 | Team | `team_name`, and optionally `team_member_email` — the user the suite adds to its team. CI reads it from the `TF_E2E_TEAM_MEMBER_EMAIL` repository variable |
 | SSO group | `sso_group_name_prefix` — nothing else. No identity provider group has the test name, so the roles reach nobody |
