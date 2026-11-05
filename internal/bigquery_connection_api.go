@@ -44,6 +44,7 @@ type bigQueryConnectionCreatePayload struct {
 	GcpProjectId             string  `json:"gcp_project_id"`
 	BigqueryDatasetId        *string `json:"bigquery_dataset_id,omitempty"`
 	BillingAccountId         *string `json:"billing_account_id,omitempty"`
+	BillingProjectId         *string `json:"billing_project_id,omitempty"`
 	ServiceAccount           string  `json:"service_account"`
 	SyncEnabled              bool    `json:"sync_enabled"`
 	QuerySanitizationEnabled bool    `json:"query_sanitization_enabled"`
@@ -55,24 +56,30 @@ type bigQueryConnectionCreatePayload struct {
 // Every field is omitted when it has not changed, the same shape
 // databricksConnectionUpdatePayload uses and for the same two reasons:
 //
-//   - Nothing this resource can create is ever clearable. The API rejects null
-//     for name, gcp_project_id, service_account, sync_enabled and
-//     query_sanitization_enabled directly; bigquery_dataset_id and
-//     billing_account_id are only clearable on a DoiT-managed connection,
+//   - billing_project_id is the only thing on this resource that can be
+//     cleared, which moves SELECT to reading the exports from gcp_project_id.
+//     The API rejects null for name, gcp_project_id, service_account,
+//     sync_enabled and query_sanitization_enabled directly; bigquery_dataset_id
+//     and billing_account_id are only clearable on a DoiT-managed connection,
 //     which this resource never creates or knowingly manages.
 //   - SELECT re-validates against BigQuery when gcp_project_id,
-//     bigquery_dataset_id, billing_account_id or service_account are
-//     *present* in the patch, not when they change. Sending them
-//     unconditionally would turn renaming a connection into a live round trip
-//     to BigQuery that a GCP outage could fail.
+//     bigquery_dataset_id, billing_account_id, billing_project_id or
+//     service_account are *present* in the patch, not when they change.
+//     Sending them unconditionally would turn renaming a connection into a live
+//     round trip to BigQuery that a GCP outage could fail.
+//
+// billing_project_id is a *nullableString rather than a *string for the same
+// reason as the AWS connection's s3_prefix: omitted leaves it alone, an
+// explicit null clears it, and a value sets it.
 type bigQueryConnectionUpdatePayload struct {
-	Name                     *string `json:"name,omitempty"`
-	GcpProjectId             *string `json:"gcp_project_id,omitempty"`
-	BigqueryDatasetId        *string `json:"bigquery_dataset_id,omitempty"`
-	BillingAccountId         *string `json:"billing_account_id,omitempty"`
-	ServiceAccount           *string `json:"service_account,omitempty"`
-	SyncEnabled              *bool   `json:"sync_enabled,omitempty"`
-	QuerySanitizationEnabled *bool   `json:"query_sanitization_enabled,omitempty"`
+	Name                     *string         `json:"name,omitempty"`
+	GcpProjectId             *string         `json:"gcp_project_id,omitempty"`
+	BigqueryDatasetId        *string         `json:"bigquery_dataset_id,omitempty"`
+	BillingAccountId         *string         `json:"billing_account_id,omitempty"`
+	BillingProjectId         *nullableString `json:"billing_project_id,omitempty"`
+	ServiceAccount           *string         `json:"service_account,omitempty"`
+	SyncEnabled              *bool           `json:"sync_enabled,omitempty"`
+	QuerySanitizationEnabled *bool           `json:"query_sanitization_enabled,omitempty"`
 }
 
 // bigQueryConnectionResponse mirrors BigQueryConnection. is_doit and
@@ -86,6 +93,7 @@ type bigQueryConnectionResponse struct {
 	GcpProjectId             string   `json:"gcp_project_id"`
 	BigqueryDatasetId        *string  `json:"bigquery_dataset_id"`
 	BillingAccountId         *string  `json:"billing_account_id"`
+	BillingProjectId         *string  `json:"billing_project_id"`
 	ServiceAccount           *string  `json:"service_account"`
 	GcpOrganizationId        *string  `json:"gcp_organization_id"`
 	GcpOrganizationName      *string  `json:"gcp_organization_name"`
@@ -105,6 +113,7 @@ func buildBigQueryConnectionCreate(plan *resource_bigquery_connection.BigqueryCo
 		GcpProjectId:             plan.GcpProjectId.ValueString(),
 		BigqueryDatasetId:        stringPointer(plan.BigqueryDatasetId),
 		BillingAccountId:         stringPointer(plan.BillingAccountId),
+		BillingProjectId:         stringPointer(plan.BillingProjectId),
 		ServiceAccount:           plan.ServiceAccount.ValueString(),
 		SyncEnabled:              plan.SyncEnabled.ValueBool(),
 		QuerySanitizationEnabled: plan.QuerySanitizationEnabled.ValueBool(),
@@ -119,6 +128,7 @@ func buildBigQueryConnectionUpdate(plan, state *resource_bigquery_connection.Big
 		GcpProjectId:             changedString(plan.GcpProjectId, state.GcpProjectId),
 		BigqueryDatasetId:        changedString(plan.BigqueryDatasetId, state.BigqueryDatasetId),
 		BillingAccountId:         changedString(plan.BillingAccountId, state.BillingAccountId),
+		BillingProjectId:         clearedString(plan.BillingProjectId, state.BillingProjectId),
 		ServiceAccount:           changedString(plan.ServiceAccount, state.ServiceAccount),
 		SyncEnabled:              changedBool(plan.SyncEnabled, state.SyncEnabled),
 		QuerySanitizationEnabled: changedBool(plan.QuerySanitizationEnabled, state.QuerySanitizationEnabled),
@@ -149,6 +159,7 @@ func applyBigQueryConnectionResponse(
 	model.GcpProjectId = types.StringValue(connection.GcpProjectId)
 	model.BigqueryDatasetId = stringValue(connection.BigqueryDatasetId)
 	model.BillingAccountId = preserveEquivalentFold(source.BillingAccountId, connection.BillingAccountId)
+	model.BillingProjectId = stringValue(connection.BillingProjectId)
 	model.ServiceAccount = stringValue(connection.ServiceAccount)
 	model.GcpOrganizationId = stringValue(connection.GcpOrganizationId)
 	model.GcpOrganizationName = stringValue(connection.GcpOrganizationName)
