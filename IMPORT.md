@@ -136,7 +136,7 @@ Open the connection in the SELECT UI and take the last segment of the URL, or li
 ```bash
 curl -s https://api.select.dev/v2/aws-accounts \
   -H "Authorization: Bearer $SELECT_API_KEY" \
-  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, payer_account_id}'
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, aws_account_id}'
 ```
 
 ### Budget ID

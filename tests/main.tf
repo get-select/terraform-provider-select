@@ -305,11 +305,11 @@ variable "bigquery_sync_enabled" {
 # AWS connection test variables.
 #
 # Creating an AWS connection makes SELECT read the Cost and Usage Report out of
-# S3 for real, so these tests need an AWS payer account with a working CUR
+# S3 for real, so these tests need an AWS account with a working CUR
 # delivery and are off by default. Set enable_aws_connection_tests and the rest,
 # then run `make test-aws`.
 variable "enable_aws_connection_tests" {
-  description = "Whether to manage a real AWS connection. Creating one requires an AWS payer account with a working CUR delivery."
+  description = "Whether to manage a real AWS connection. Creating one requires an AWS account with a working CUR delivery."
   type        = bool
   default     = false
 }
@@ -329,14 +329,14 @@ variable "aws_connection_name_suffix" {
   default     = ""
 }
 
-variable "aws_payer_account_id" {
-  description = "12-digit AWS payer account SELECT reads spend for"
+variable "aws_account_id" {
+  description = "12-digit id of the AWS account that created the Cost and Usage Report export"
   type        = string
   default     = "000000000000"
 }
 
 variable "aws_s3_bucket" {
-  description = "S3 bucket AWS delivers the payer account's Cost and Usage Report to"
+  description = "S3 bucket AWS delivers the account's Cost and Usage Report to"
   type        = string
   default     = "terraform-test-cur"
 }
@@ -676,10 +676,10 @@ resource "select_aws_connection" "test" {
 
   name = "${var.aws_connection_name}${var.aws_connection_name_suffix}"
 
-  payer_account_id = var.aws_payer_account_id
-  s3_bucket        = var.aws_s3_bucket
-  s3_prefix        = var.aws_s3_prefix
-  region           = var.aws_region
+  aws_account_id = var.aws_account_id
+  s3_bucket      = var.aws_s3_bucket
+  s3_prefix      = var.aws_s3_prefix
+  region         = var.aws_region
 
   credentials = {
     access_key_id     = var.aws_access_key_id

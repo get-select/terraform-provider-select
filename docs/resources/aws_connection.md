@@ -1,28 +1,28 @@
 <!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
 # select_aws_connection (Resource)
 
-A connection to one AWS payer account: the S3 location AWS delivers its Cost and Usage Report to, and the IAM user SELECT reads that report as.
+A connection to one AWS account: the S3 location AWS delivers its Cost and Usage Report to, and the IAM user SELECT reads that report as.
 
 ## About
 
-An AWS connection is how SELECT reads one AWS payer account's spend: the S3 bucket AWS delivers that account's Cost and Usage Report to, the path within it the report lands under, and the IAM user SELECT reads those objects as. To learn more, see the [SELECT documentation](https://select.dev/docs/getting-started).
+An AWS connection is how SELECT reads one AWS account's spend: the S3 bucket AWS delivers that account's Cost and Usage Report to, the path within it the report lands under, and the IAM user SELECT reads those objects as. To learn more, see the [SELECT documentation](https://select.dev/docs/getting-started).
 
 This resource is backed by SELECT's v2 API, where the underlying resource is called an AWS account and lives at `/v2/aws-accounts`. The `api_key` configured on the provider must carry the `aws_accounts:read` and `aws_accounts:write` scopes; without them every operation fails with an authorization error.
 
 ## Example Usage
 
 ```terraform
-# SELECT reads an AWS payer account's spend out of the Cost and Usage Report AWS
+# SELECT reads an AWS account's spend out of the Cost and Usage Report AWS
 # delivers to S3. The credentials are an IAM user's access key pair with
 # permission to list and read the report objects under the prefix — SELECT does
 # not assume a role, so there is no role ARN or external id here.
 resource "select_aws_connection" "production" {
   name = "Acme Production"
 
-  payer_account_id = "123456789012"
-  s3_bucket        = "acme-cost-and-usage-reports"
-  s3_prefix        = "cur/production"
-  region           = "us-east-1"
+  aws_account_id = "123456789012"
+  s3_bucket      = "acme-cost-and-usage-reports"
+  s3_prefix      = "cur/production"
+  region         = "us-east-1"
 
   credentials = {
     access_key_id     = var.aws_access_key_id
@@ -36,9 +36,9 @@ resource "select_aws_connection" "production" {
 resource "select_aws_connection" "sandbox" {
   name = "Acme Sandbox"
 
-  payer_account_id = "210987654321"
-  s3_bucket        = "acme-sandbox-cur"
-  region           = "eu-west-1"
+  aws_account_id = "210987654321"
+  s3_bucket      = "acme-sandbox-cur"
+  region         = "eu-west-1"
 
   credentials = {
     access_key_id     = var.aws_sandbox_access_key_id
@@ -55,11 +55,11 @@ resource "select_aws_connection" "sandbox" {
 
 ### Required
 
+- `aws_account_id` (String) The 12-digit id of the AWS account that created the Cost and Usage Report export: the payer account, or a member account exporting its own usage.
 - `credentials` (Attributes) The IAM user SELECT authenticates as when it reads the Cost and Usage Report. The secret in this block is stored in a secret store and never returned by the API, so SELECT cannot detect changes made to it outside Terraform. (see [below for nested schema](#nestedatt--credentials))
 - `name` (String) Display name for the account, as shown throughout SELECT.
-- `payer_account_id` (String) The 12-digit AWS account id of the payer account SELECT reads spend for.
 - `region` (String) The AWS region the bucket is in, such as `us-east-1`. SELECT reads the bucket through this region's S3 endpoint.
-- `s3_bucket` (String) The S3 bucket AWS delivers this payer account's Cost and Usage Report to.
+- `s3_bucket` (String) The S3 bucket AWS delivers this account's Cost and Usage Report to.
 
 ### Optional
 
@@ -114,24 +114,24 @@ There is deliberately no separate credentials check: S3's `HeadBucket` does not 
 
 ### Which changes revalidate
 
-SELECT revalidates whenever an apply changes `payer_account_id`, `s3_bucket`, `s3_prefix`, `region` or `credentials`. Changing only `name` or `sync_enabled` makes no call to AWS, so a rename works even when S3 does not.
+SELECT revalidates whenever an apply changes `aws_account_id`, `s3_bucket`, `s3_prefix`, `region` or `credentials`. Changing only `name` or `sync_enabled` makes no call to AWS, so a rename works even when S3 does not.
 
 ### Nothing forces a replacement
 
-Every configurable field on this resource can be changed in place, including `payer_account_id` — SELECT moves the connection to the new payer account and revalidates rather than requiring a new connection. This is unlike the Snowflake, Databricks and BigQuery resources, each of which has at least one field fixed at creation.
+Every configurable field on this resource can be changed in place, including `aws_account_id` — SELECT moves the connection to the new AWS account and revalidates rather than requiring a new connection. This is unlike the Snowflake, Databricks and BigQuery resources, each of which has at least one field fixed at creation.
 
-### One connection per payer account, and per report location
+### One connection per AWS account, and per report location
 
 SELECT refuses a second connection that would read ground it already covers. Two configurations are rejected:
 
-- a `payer_account_id` that another connection in the organization already reads, and
+- an `aws_account_id` that another connection in the organization already reads, and
 - an `s3_bucket` and `s3_prefix` pair another connection already reads.
 
-The second is worth calling out separately: two payer accounts delivering to the same bucket need different prefixes.
+The second is worth calling out separately: two AWS accounts delivering to the same bucket need different prefixes.
 
 ### `s3_prefix` is the only field that can be cleared
 
-Removing `s3_prefix` from the configuration moves SELECT to reading the root of the bucket. Every other field rejects removal — an account with no name, no payer id, no bucket, no region or no credentials cannot ingest anything, so there is no cleared state for them to have.
+Removing `s3_prefix` from the configuration moves SELECT to reading the root of the bucket. Every other field rejects removal — an account with no name, no account id, no bucket, no region or no credentials cannot ingest anything, so there is no cleared state for them to have.
 
 An empty string is not the same as no prefix. `s3_prefix = ""` is stored as an empty prefix and counts as a different report location from an absent one when SELECT checks for duplicates. Omit the field rather than setting it to `""`.
 
@@ -143,4 +143,4 @@ The ETag also moves when the connection is renamed or when `sync_enabled` is tog
 
 ### Deleting a connection is not reversible
 
-Destroying this resource removes the connection and the usage data SELECT has collected through it. Re-adding the same payer account and report location starts its history over.
+Destroying this resource removes the connection and the usage data SELECT has collected through it. Re-adding the same AWS account and report location starts its history over.

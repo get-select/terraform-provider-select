@@ -1,14 +1,14 @@
-# SELECT reads an AWS payer account's spend out of the Cost and Usage Report AWS
+# SELECT reads an AWS account's spend out of the Cost and Usage Report AWS
 # delivers to S3. The credentials are an IAM user's access key pair with
 # permission to list and read the report objects under the prefix — SELECT does
 # not assume a role, so there is no role ARN or external id here.
 resource "select_aws_connection" "production" {
   name = "Acme Production"
 
-  payer_account_id = "123456789012"
-  s3_bucket        = "acme-cost-and-usage-reports"
-  s3_prefix        = "cur/production"
-  region           = "us-east-1"
+  aws_account_id = "123456789012"
+  s3_bucket      = "acme-cost-and-usage-reports"
+  s3_prefix      = "cur/production"
+  region         = "us-east-1"
 
   credentials = {
     access_key_id     = var.aws_access_key_id
@@ -22,9 +22,9 @@ resource "select_aws_connection" "production" {
 resource "select_aws_connection" "sandbox" {
   name = "Acme Sandbox"
 
-  payer_account_id = "210987654321"
-  s3_bucket        = "acme-sandbox-cur"
-  region           = "eu-west-1"
+  aws_account_id = "210987654321"
+  s3_bucket      = "acme-sandbox-cur"
+  region         = "eu-west-1"
 
   credentials = {
     access_key_id     = var.aws_sandbox_access_key_id

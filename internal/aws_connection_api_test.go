@@ -25,16 +25,16 @@ func awsCredentials(accessKeyId, secretAccessKey string) resource_aws_connection
 
 func awsConnection() resource_aws_connection.AwsConnectionModel {
 	return resource_aws_connection.AwsConnectionModel{
-		Id:             types.StringValue("2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01"),
-		Etag:           types.StringValue(`"abc123"`),
-		Name:           types.StringValue("Acme Production"),
-		ConnectionId:   types.StringValue("8b2d1f0a-3c4e-4a5b-9c6d-7e8f9a0b1c2d"),
-		PayerAccountId: types.StringValue("123456789012"),
-		S3Bucket:       types.StringValue("acme-cur"),
-		S3Prefix:       types.StringValue("reports/prod"),
-		Region:         types.StringValue("us-east-1"),
-		Credentials:    awsCredentials("AKIAEXAMPLEONE", "secret-one"),
-		SyncEnabled:    types.BoolValue(true),
+		Id:           types.StringValue("2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01"),
+		Etag:         types.StringValue(`"abc123"`),
+		Name:         types.StringValue("Acme Production"),
+		ConnectionId: types.StringValue("8b2d1f0a-3c4e-4a5b-9c6d-7e8f9a0b1c2d"),
+		AwsAccountId: types.StringValue("123456789012"),
+		S3Bucket:     types.StringValue("acme-cur"),
+		S3Prefix:     types.StringValue("reports/prod"),
+		Region:       types.StringValue("us-east-1"),
+		Credentials:  awsCredentials("AKIAEXAMPLEONE", "secret-one"),
+		SyncEnabled:  types.BoolValue(true),
 	}
 }
 
@@ -46,12 +46,12 @@ func TestAwsCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 	payload := marshal(t, buildAwsConnectionCreate(&plan))
 
 	for field, expected := range map[string]any{
-		"name":             "Acme Production",
-		"payer_account_id": "123456789012",
-		"s3_bucket":        "acme-cur",
-		"s3_prefix":        "reports/prod",
-		"region":           "us-east-1",
-		"sync_enabled":     true,
+		"name":           "Acme Production",
+		"aws_account_id": "123456789012",
+		"s3_bucket":      "acme-cur",
+		"s3_prefix":      "reports/prod",
+		"region":         "us-east-1",
+		"sync_enabled":   true,
 	} {
 		if payload[field] != expected {
 			t.Errorf("%s should be %v, got %v", field, expected, payload[field])
@@ -81,7 +81,7 @@ func TestAwsCreatePayloadOmitsUnsetPrefix(t *testing.T) {
 	}
 }
 
-// SELECT re-validates against S3 whenever payer_account_id, s3_bucket,
+// SELECT re-validates against S3 whenever aws_account_id, s3_bucket,
 // s3_prefix, region or credentials are present in the patch — present, not
 // changed. A rename must therefore leave all five out, or renaming a connection
 // would depend on S3 being reachable.
@@ -96,7 +96,7 @@ func TestAwsUpdatePayloadOmitsUnchangedAccessFields(t *testing.T) {
 		t.Errorf("the changed name should be sent, got %v", payload["name"])
 	}
 	for _, field := range []string{
-		"payer_account_id", "s3_bucket", "s3_prefix", "region", "credentials", "sync_enabled",
+		"aws_account_id", "s3_bucket", "s3_prefix", "region", "credentials", "sync_enabled",
 	} {
 		if _, present := payload[field]; present {
 			t.Errorf("%s did not change and should have been omitted, got %v", field, payload[field])
@@ -150,7 +150,7 @@ func TestAwsUpdatePayloadClearsPrefixWithExplicitNull(t *testing.T) {
 	if value != nil {
 		t.Errorf("s3_prefix should be null, got %v", value)
 	}
-	for _, field := range []string{"name", "payer_account_id", "s3_bucket", "region", "credentials", "sync_enabled"} {
+	for _, field := range []string{"name", "aws_account_id", "s3_bucket", "region", "credentials", "sync_enabled"} {
 		if _, present := payload[field]; present {
 			t.Errorf("%s did not change and should have been omitted, got %v", field, payload[field])
 		}
@@ -180,16 +180,16 @@ func TestAwsApplyResponseKeepsCredentialsFromState(t *testing.T) {
 	model := awsConnection()
 
 	response := &awsConnectionResponse{
-		Id:             "2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01",
-		Etag:           `"def456"`,
-		Name:           "Acme Production",
-		ConnectionId:   "8b2d1f0a-3c4e-4a5b-9c6d-7e8f9a0b1c2d",
-		PayerAccountId: "123456789012",
-		S3Bucket:       "acme-cur",
-		Region:         "us-east-1",
-		SyncEnabled:    true,
-		CreateTime:     "2025-01-01T00:00:00Z",
-		UpdateTime:     "2025-01-02T00:00:00Z",
+		Id:           "2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01",
+		Etag:         `"def456"`,
+		Name:         "Acme Production",
+		ConnectionId: "8b2d1f0a-3c4e-4a5b-9c6d-7e8f9a0b1c2d",
+		AwsAccountId: "123456789012",
+		S3Bucket:     "acme-cur",
+		Region:       "us-east-1",
+		SyncEnabled:  true,
+		CreateTime:   "2025-01-01T00:00:00Z",
+		UpdateTime:   "2025-01-02T00:00:00Z",
 	}
 
 	if diags := applyAwsConnectionResponse(context.Background(), &model, &state, response); diags.HasError() {
@@ -263,16 +263,16 @@ func TestAwsPreconditionAndScopeDiagnostics(t *testing.T) {
 
 // Both AWS conflicts arrive as already_connected, so unlike Databricks the field
 // rather than the issue is what tells them apart — and they have different
-// remedies. A duplicate payer account can only be imported; a duplicate report
+// remedies. A duplicate AWS account can only be imported; a duplicate report
 // location can also be moved.
 func TestAwsConflictDiagnosticsDifferByField(t *testing.T) {
-	payer := awsConnectionAPIDiagnostic("add the AWS connection", newAPIError(409, `{
-		"detail": "AWS payer account '123456789012' is already connected via 'Acme'.",
+	account := awsConnectionAPIDiagnostic("add the AWS connection", newAPIError(409, `{
+		"detail": "AWS account '123456789012' is already connected via 'Acme'.",
 		"code": "conflict",
-		"details": [{"field": "payer_account_id", "issue": "already_connected"}]
+		"details": [{"field": "aws_account_id", "issue": "already_connected"}]
 	}`))
-	if !strings.Contains(payer.Detail(), "terraform import") {
-		t.Errorf("an already-connected payer account should point at import, got: %s", payer.Detail())
+	if !strings.Contains(account.Detail(), "terraform import") {
+		t.Errorf("an already-connected AWS account should point at import, got: %s", account.Detail())
 	}
 
 	bucket := awsConnectionAPIDiagnostic("add the AWS connection", newAPIError(409, `{
@@ -280,7 +280,7 @@ func TestAwsConflictDiagnosticsDifferByField(t *testing.T) {
 		"code": "conflict",
 		"details": [{"field": "s3_bucket", "issue": "already_connected"}]
 	}`))
-	if bucket.Summary() == payer.Summary() {
+	if bucket.Summary() == account.Summary() {
 		t.Errorf("the two conflicts should not read as the same failure, both said: %s", bucket.Summary())
 	}
 	if !strings.Contains(bucket.Detail(), "report location") {
@@ -298,8 +298,8 @@ func TestAwsConflictDiagnosticNamesDuplicateConnectionName(t *testing.T) {
 		"code": "conflict",
 		"details": [{"field": "name", "issue": "name_already_exists"}]
 	}`))
-	if strings.Contains(name.Detail(), "payer account") || strings.Contains(name.Detail(), "report location") {
-		t.Errorf("a duplicate name should not be misreported as a duplicate payer account or report location, got: %s", name.Detail())
+	if strings.Contains(name.Detail(), "AWS account is already connected") || strings.Contains(name.Detail(), "report location") {
+		t.Errorf("a duplicate name should not be misreported as a duplicate AWS account or report location, got: %s", name.Detail())
 	}
 	if !strings.Contains(name.Detail(), "unique") {
 		t.Errorf("a duplicate name should explain that names must be unique, got: %s", name.Detail())

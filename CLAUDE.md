@@ -25,7 +25,7 @@ This is the Terraform Provider for SELECT, a **mostly auto-generated** provider 
 - `make test-snowflake` - Snowflake account tests; needs working Snowflake credentials, so it is excluded from `make test`
 - `make test-databricks` - Databricks connection tests; needs a working Databricks service principal, so it is excluded from `make test`
 - `make test-bigquery` - BigQuery connection tests; needs a working GCP project and service account, so it is excluded from `make test`
-- `make test-aws` - AWS connection tests; needs an AWS payer account with a working CUR delivery, so it is excluded from `make test`
+- `make test-aws` - AWS connection tests; needs an AWS account with a working CUR delivery, so it is excluded from `make test`
 - `make test-connections` - All four connection suites
 - `make test-budget` - Budget tests; creates no real connection, so it needs only the same API key every suite already uses
 - `make test-team` - Team, team member and team data source tests; like budget, needs only the API key

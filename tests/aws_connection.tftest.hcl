@@ -46,8 +46,8 @@ run "create_aws_connection" {
   }
 
   assert {
-    condition     = select_aws_connection.test[0].payer_account_id == var.aws_payer_account_id
-    error_message = "The configured payer account should be recorded"
+    condition     = select_aws_connection.test[0].aws_account_id == var.aws_account_id
+    error_message = "The configured AWS account id should be recorded"
   }
 
   assert {

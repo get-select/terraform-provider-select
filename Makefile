@@ -136,16 +136,16 @@ test-bigquery:
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=bigquery_connection.tftest.hcl
 
 # AWS connection tests, which manage a real connection: creating one makes
-# SELECT read the Cost and Usage Report out of S3, so these need an AWS payer
+# SELECT read the Cost and Usage Report out of S3, so these need an AWS
 # account with a real CUR delivery and are kept out of `make test`.
 #
 # Required environment:
 #   TF_VAR_select_api_key      an API key with aws_accounts:read and :write
 #   TF_VAR_select_organization_id
-#   TF_VAR_aws_payer_account_id, TF_VAR_aws_s3_bucket, TF_VAR_aws_s3_prefix,
+#   TF_VAR_aws_account_id, TF_VAR_aws_s3_bucket, TF_VAR_aws_s3_prefix,
 #   TF_VAR_aws_region, TF_VAR_aws_access_key_id, TF_VAR_aws_secret_access_key
 test-aws:
-	@echo "Running AWS connection tests against a real AWS payer account..."
+	@echo "Running AWS connection tests against a real AWS account..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=aws_connection.tftest.hcl
 
 # The four connection suites in one target. Each manages a real connection, so
@@ -297,7 +297,7 @@ help:
 	@echo "  test-snowflake   - Run Snowflake account tests (needs real Snowflake credentials)"
 	@echo "  test-databricks  - Run Databricks connection tests (needs real Databricks credentials)"
 	@echo "  test-bigquery    - Run BigQuery connection tests (needs a real GCP project and service account)"
-	@echo "  test-aws         - Run AWS connection tests (needs a real AWS payer account and CUR bucket)"
+	@echo "  test-aws         - Run AWS connection tests (needs a real AWS account and CUR bucket)"
 	@echo "  test-connections - Run all four connection test suites"
 	@echo "  test-budget      - Run budget tests (needs only an API key; no external system involved)"
 	@echo "  test-team        - Run team tests (needs only an API key; no external system involved)"
