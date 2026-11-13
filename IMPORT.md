@@ -21,6 +21,9 @@ The SELECT Terraform provider supports importing existing resources that were cr
 - `select_user_role` - User Role Grants
 - `select_default_role` - Default Role Grants
 - `select_sso_group` - SSO Groups, with their roles
+- `select_monitor` - Monitors
+- `select_slack_alert_destination`, `select_email_alert_destination`, `select_ms_teams_alert_destination` - Alert Destinations
+- `select_alert_integration` - Alert Integrations (email and MS Teams webhook)
 
 ## Prerequisites
 
@@ -149,6 +152,24 @@ Open the budget in the SELECT UI and take the last segment of the URL, or list t
 curl -s https://api.select.dev/v2/budgets \
   -H "Authorization: Bearer $SELECT_API_KEY" \
   -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, amount}'
+```
+
+### Monitor ID, Alert Destination ID and Alert Integration ID
+
+SELECT assigns these IDs. List them with the API:
+
+```bash
+curl -s https://api.select.dev/v2/monitors \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, name, type}'
+
+curl -s https://api.select.dev/v2/destinations \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, integration_type, channel, email_address}'
+
+curl -s https://api.select.dev/v2/alert-integrations \
+  -H "Authorization: Bearer $SELECT_API_KEY" \
+  -H "x-tenant-id: $SELECT_ORGANIZATION_ID" | jq '.items[] | {id, integration_type, display_name}'
 ```
 
 ### Team ID and Team Member ID
@@ -340,6 +361,40 @@ terraform import select_budget.production 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
 ```
 
 **Note**: Unlike the connection resources, a budget holds no secret, so nothing about the import is incomplete. `period` must still match what SELECT has on record — including `schedule_type` — or the first `terraform plan` after the import will show it as a change.
+
+### Importing a Monitor
+
+**Command Format:**
+```bash
+terraform import select_monitor.<resource_name> <monitor_id>
+```
+
+**Note**: State holds the full `trigger_config` query and `message_config` that SELECT stores, with the defaults and generated text it adds. The first `terraform plan` after the import can show `trigger_config` or `message_config_json` as a change. Apply once; after that, only a change to a key that the configuration sets shows as a change.
+
+### Importing an Alert Destination
+
+**Command Format:**
+```bash
+terraform import select_email_alert_destination.<resource_name> <destination_id>
+terraform import select_slack_alert_destination.<resource_name> <destination_id>
+terraform import select_ms_teams_alert_destination.<resource_name> <destination_id>
+```
+
+**Note**: Use the resource for the destination's `integration_type`. An import with the id of a different type fails. SELECT never returns an MS Teams `webhook_url`, so the first `terraform plan` after the import shows it as a change. Applying it sends the URL again.
+
+### Importing an Alert Integration
+
+**Command Format:**
+```bash
+terraform import select_alert_integration.<resource_name> <integration_type>/<alert_integration_id>
+```
+
+**Example:**
+```bash
+terraform import select_alert_integration.email email/2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+**Note**: The import fails when the integration is not of the given type. Usually an import is not necessary. A create adopts the organization's existing email or MS Teams webhook integration.
 
 ### Importing a Team
 

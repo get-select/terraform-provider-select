@@ -1,0 +1,58 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## About
+
+A monitor runs a query on a schedule and sends a message to its destinations when its trigger fires. To learn more, see the [SELECT documentation](https://select.dev/docs/getting-started).
+
+This resource is backed by SELECT's v2 API, at `/v2/monitors`. The `api_key` configured on the provider must carry the `monitors:read` and `monitors:write` scopes.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported using the monitor's ID in SELECT:
+
+```bash
+terraform import {{ .Name }}.example 6c1f0e2a-3b4d-4e5f-8a9b-0c1d2e3f4a5b
+```
+
+To list the IDs, call `GET /v2/monitors`. See [IMPORT.md](https://github.com/get-select/terraform-provider-select/blob/main/IMPORT.md).
+
+After an import, the first plan can show a change to `trigger_config`, `query_json` or `message_config_json`, because state holds the full document that SELECT stores. Write the configuration, then apply once.
+
+## Additional Information
+
+### `trigger_config` is one object, keyed by `type`
+
+`trigger_config.type` selects the variant, and the other fields that are valid depend on it. A field that does not belong to the type fails at plan time:
+
+| type | requires | accepts |
+|---|---|---|
+| `digest` | `skip_if_empty` | |
+| `condition` | `query_json`, `operator`, `threshold`, `trigger` | |
+| `anomaly_prophet` | `query_json`, `sensitivity` | `trigger_on_upper_band`, `trigger_on_lower_band`, `minimum_threshold` |
+| `anomaly_percentile` | `query_json` | `upper_percentile`, `lower_percentile`, `deviations`, `minimum_threshold` |
+| `budget_threshold` | `thresholds` | `query_json` |
+
+### `query_json` and `message_config_json` are JSON documents
+
+`trigger_config.query_json` is a `MonitorQuery` and `message_config_json` is a `MonitorMessageConfig`, both JSON-encoded. Use `jsonencode()`. `GET /v2/monitors/query-classes` lists the query classes, and `GET /v2/monitors/query-classes/{query_class}/columns` lists the columns of one class.
+
+SELECT adds keys to these documents when it stores them: defaults such as `period.date_column`, and generated text such as a chart title or a paragraph body. The provider compares only the keys that the configuration sets. A key that only SELECT sets does not show as a change. A change to a key that the configuration sets shows as a change. A `null` in the configuration sets nothing, so a value that SELECT fills in for it does not show as a change.
+
+The optional fields of `trigger_config` show a change when SELECT holds a value that the configuration does not set, with two exceptions. `trigger_on_upper_band` and `trigger_on_lower_band` do not show their default, `true`. An unset `query_json` on a `budget_threshold` trigger does not show a query that SELECT holds.
+
+### An update replaces the full monitor
+
+An update sends `PUT /v2/monitors/{id}` with the full configuration. Removing `cron`, `team_id`, `budget_id`, `snowflake_account_id` or `partition_columns` from the configuration clears it.
+
+### Changes made outside Terraform
+
+Every write carries the monitor's `etag` as an `If-Match` header, so an update or delete is refused if the monitor changed since Terraform last read it. When that happens, run `terraform apply -refresh-only` to pick up the current state and then apply again.

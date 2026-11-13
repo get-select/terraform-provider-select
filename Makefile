@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
-.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-team test-role test-sso-group test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
+.PHONY: codegen build install clean reset test test-go test-all test-usage-group test-snowflake test-databricks test-bigquery test-aws test-connections test-budget test-team test-role test-sso-group test-monitor test-sweep test-validate test-clean setup-dev-overrides docs remote-ci-test-suite
 # The provider is generated from the v2 API's OpenAPI document. specpatch fills
 # in what tfplugingen-openapi cannot produce — dropped descriptions, sensitive
 # attributes, plan modifiers. See tools/specpatch.
@@ -211,14 +211,32 @@ test-sso-group:
 	@echo "Running SSO group tests..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=sso_group.tftest.hcl
 
+# Monitor tests: select_alert_integration (resource and data source), the
+# email and MS Teams alert destinations, and a budget_threshold monitor. No
+# resource here calls an external system on create, so this needs only the API
+# key and organization every other test already uses. Destroy disables the
+# email and MS Teams webhook integrations for the full organization, so run it
+# only against a test organization.
+#
+# Required environment:
+#   TF_VAR_select_api_key      an API key with monitors, destinations,
+#                              alert_integrations and budgets read and write scopes
+#   TF_VAR_select_organization_id
+# Optional:
+#   TF_VAR_monitor_name        start of the names, email address and channel the suite uses
+test-monitor:
+	@echo "Running monitor tests..."
+	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=monitor.tftest.hcl
+
 # Alias for the e2e workflow, whose matrix runs `make test-${{ matrix.platform }}`
 # for every leg. The usage group suite already runs as part of test-all
 # (provider.tftest.hcl), so this just gives it a matching name rather than
 # splitting it into its own filtered target.
 test-usage-group: test-all
 
-# Remove connections, budgets, usage group sets, teams, SSO groups and role
-# grants a failed run left attached to the organization.
+# Remove connections, monitors, alert destinations, budgets, usage group sets,
+# teams, SSO groups and role grants a failed run left attached to the
+# organization.
 # `terraform test` tears down what it can, but a run killed mid-apply — or one
 # whose destroy the API refused — leaves a resource behind. A leaked connection
 # then fails the next run outright, on the name already being in use; a leaked
@@ -236,7 +254,7 @@ test-usage-group: test-all
 #                              only an email that starts with CI_RESOURCE_PREFIX
 #                              is swept. CI sets the role suite's per-run email.
 test-sweep:
-	@echo "Sweeping leftover test connections, budgets, usage group sets, teams, SSO groups and role grants..."
+	@echo "Sweeping leftover test connections, monitors, alert destinations, budgets, usage group sets, teams, SSO groups and role grants..."
 	./scripts/ci-cleanup-connections.sh
 
 test-clean:
@@ -303,6 +321,7 @@ help:
 	@echo "  test-team        - Run team tests (needs only an API key; no external system involved)"
 	@echo "  test-role        - Run role grant tests (needs only an API key; no external system involved)"
 	@echo "  test-sso-group   - Run SSO group tests (needs only an API key; no external system involved)"
+	@echo "  test-monitor     - Run monitor, alert destination and alert integration tests (needs only an API key)"
 	@echo "  test-sweep       - Delete connections, budgets, usage group sets, teams, SSO groups and role grants a failed run left behind"
 	@echo "  test-clean       - Clean up test resources and state files"
 	@echo ""

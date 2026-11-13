@@ -3,6 +3,7 @@
 package provider
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -80,5 +81,90 @@ func TestPreserveEquivalentJSONFallsBackToRawOnInvalidJSONWhenUnconfigured(t *te
 
 	if got.ValueString() != returned {
 		t.Errorf("invalid JSON should be passed through verbatim rather than dropped, got %s", got.ValueString())
+	}
+}
+
+func TestPreserveConfiguredJSON(t *testing.T) {
+	configured := `{"title":null,"sections":[{"section_type":"chart","query":{"query_class":"OrgDailySpendQuery","period":{"period":30,"grain":"day"}}}]}`
+
+	cases := []struct {
+		name       string
+		configured types.String
+		returned   *string
+		want       types.String
+	}{
+		{
+			name:       "the API adds keys",
+			configured: types.StringValue(configured),
+			returned:   strPtr(`{"sections":[{"enabled":true,"title":"Daily spend","section_type":"chart","query":{"period":{"grain":"day","period":30,"date_column":"day","fill_missing_dates":false},"query_class":"OrgDailySpendQuery"}}],"templated_values":{}}`),
+			want:       types.StringValue(configured),
+		},
+		{
+			name:       "the API changes a configured value",
+			configured: types.StringValue(configured),
+			returned:   strPtr(`{"sections":[{"section_type":"chart","query":{"query_class":"OrgDailySpendQuery","period":{"period":7,"grain":"day"}}}]}`),
+			want:       types.StringValue(`{"sections":[{"section_type":"chart","query":{"query_class":"OrgDailySpendQuery","period":{"period":7,"grain":"day"}}}]}`),
+		},
+		{
+			name:       "the API returns a different number of sections",
+			configured: types.StringValue(`{"sections":[{"section_type":"title"}]}`),
+			returned:   strPtr(`{"sections":[{"section_type":"title"},{"section_type":"title"}]}`),
+			want:       types.StringValue(`{"sections":[{"section_type":"title"},{"section_type":"title"}]}`),
+		},
+		{
+			name:       "a configured null matches the generated value",
+			configured: types.StringValue(`{"title":null}`),
+			returned:   strPtr(`{"title":"Generated"}`),
+			want:       types.StringValue(`{"title":null}`),
+		},
+		{
+			name:       "no configuration, as after an import, gives sorted keys",
+			configured: types.StringNull(),
+			returned:   strPtr(`{"b":1,"a":2}`),
+			want:       types.StringValue(`{"a":2,"b":1}`),
+		},
+		{
+			name:       "no response",
+			configured: types.StringValue(configured),
+			returned:   nil,
+			want:       types.StringNull(),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := preserveConfiguredJSON(tc.configured, tc.returned); !got.Equal(tc.want) {
+				t.Errorf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestJSONSubset(t *testing.T) {
+	cases := []struct {
+		want, got string
+		subset    bool
+	}{
+		{`{"a":1}`, `{"a":1,"b":2}`, true},
+		{`{"a":1}`, `{"a":1.0}`, true},
+		{`{"a":null}`, `{}`, true},
+		{`{"a":null}`, `{"a":null}`, true},
+		{`{"a":null}`, `{"a":"generated"}`, true},
+		{`{"a":1}`, `{}`, false},
+		{`{"a":[1,2]}`, `{"a":[2,1]}`, false},
+		{`{"a":{"b":"x"}}`, `{"a":"x"}`, false},
+		{`[{"a":1}]`, `[{"a":1,"b":2}]`, true},
+	}
+	for _, tc := range cases {
+		var want, got any
+		if err := json.Unmarshal([]byte(tc.want), &want); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(tc.got), &got); err != nil {
+			t.Fatal(err)
+		}
+		if jsonSubset(want, got) != tc.subset {
+			t.Errorf("jsonSubset(%s, %s) should be %v", tc.want, tc.got, tc.subset)
+		}
 	}
 }

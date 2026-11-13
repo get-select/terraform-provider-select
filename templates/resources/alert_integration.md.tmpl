@@ -1,0 +1,20 @@
+<!-- /docs/ is auto generated from the provider schema, and the templates in /templates do not edit files in /docs directly. -->
+# {{ .Name }} (Resource)
+
+{{ .Description | trimspace }}
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+`{{ .Name }}` can be imported with the integration type and the integration's ID in SELECT:
+
+```bash
+terraform import {{ .Name }}.email email/2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
+```
+
+The import fails when the integration is not of the given type. Usually an import is not necessary: a create adopts the organization's existing integration.

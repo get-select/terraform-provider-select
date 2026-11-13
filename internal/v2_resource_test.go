@@ -218,3 +218,14 @@ func TestImportUsageGroupRejectsAddressesMissingAnId(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateHTTPMethodDefaultsToPatch(t *testing.T) {
+	r := &v2Resource[probeModel, probeResponse]{}
+	if got := r.updateHTTPMethod(); got != http.MethodPatch {
+		t.Errorf("an empty updateMethod should send PATCH, got %s", got)
+	}
+	r.updateMethod = http.MethodPut
+	if got := r.updateHTTPMethod(); got != http.MethodPut {
+		t.Errorf("updateMethod should set the method, got %s", got)
+	}
+}

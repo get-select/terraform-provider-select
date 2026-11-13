@@ -15,7 +15,14 @@ is the same: it manages a real team, one member and the `select_team` data
 source, and calls no external system. So is `role.tftest.hcl`: it grants a team
 role, a user role and a default role, on a team, usage group set and usage
 group it makes itself, and reads the `select_users` data source. So is `sso_group.tftest.hcl`: it manages an SSO group
-with two roles, and a team member that refers to the group.
+with two roles, and a team member that refers to the group. So is
+`monitor.tftest.hcl`: it manages the email and MS Teams webhook alert
+integrations, one destination of each, a budget and a disabled
+`budget_threshold` monitor that sends to both destinations. SELECT does not
+check an email address or a webhook URL until it sends, and a disabled
+monitor never sends. The alert integrations are organization-wide, and
+destroy disables them for the full organization, so run this suite only
+against a test organization.
 
 ## Setup
 
@@ -46,8 +53,9 @@ make test-budget       # no credentials of its own; joins CI's e2e matrix
 make test-team         # no credentials of its own; joins CI's e2e matrix
 make test-role         # no credentials of its own; joins CI's e2e matrix
 make test-sso-group    # no credentials of its own; joins CI's e2e matrix
+make test-monitor      # no credentials of its own; joins CI's e2e matrix
 make test-clean        # remove local state files
-make test-sweep        # delete connections, budgets, usage group sets, teams, SSO groups and role grants a failed run left behind
+make test-sweep        # delete connections, monitors, alert destinations, budgets, usage group sets, teams, SSO groups and role grants a failed run left behind
 ```
 
 Individual cases:
@@ -103,6 +111,7 @@ variables for the one you want to run.
 | Budget | `budget_name` — nothing else; creating a budget makes no call to an external system |
 | Team | `team_name`, and optionally `team_member_email` — the user the suite adds to its team. CI reads it from the `TF_E2E_TEAM_MEMBER_EMAIL` repository variable |
 | SSO group | `sso_group_name_prefix` — nothing else. No identity provider group has the test name, so the roles reach nobody |
+| Monitor | `monitor_name` — nothing else. It starts the names of the monitor and its budget, the email address and the Teams channel, so the sweep finds them |
 | Role | `role_name_prefix`, and optionally `role_user_email` — the email the suite grants a user role to. Keep it an address that belongs to no real user. CI sets a new one on every run, `terraform-test-<run id>-role-user@example.com` |
 
 One of these is not obvious: **`bigquery_service_account`** is not a credential
@@ -112,8 +121,8 @@ account, so the grant lives in the target GCP project's IAM, not here.
 ## In CI
 
 `.github/workflows/e2e.yaml` runs the connection suites, budget, usage groups,
-teams, role grants and SSO groups as a matrix against the deployed API using a dedicated test
-organization — Databricks, BigQuery, AWS, Budget, Usage Group, Team, Role and SSO Group. Credentials come from GitHub secrets mapped to the
+teams, role grants, SSO groups and monitors as a matrix against the deployed API using a dedicated test
+organization — Databricks, BigQuery, AWS, Budget, Usage Group, Team, Role, SSO Group and Monitor. Credentials come from GitHub secrets mapped to the
 `TF_VAR_` names above — the same mechanism the select repo's `test-e2e.yaml`
 uses, though every secret here is its own copy rather than shared with it.
 select's equivalents are named `E2E_CREATE_*` because it also runs e2e tests
