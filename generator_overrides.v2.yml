@@ -316,7 +316,8 @@ resources:
   aws_connection:
     description: >-
       A connection to one AWS account: the S3 location AWS delivers its Cost
-      and Usage Report to, and the IAM user SELECT reads that report as.
+      and Usage Report to, and how SELECT signs in to read it, either by
+      assuming a role in the account or with an IAM user's access key.
 
     description_sources:
       - AwsAccountCreate
@@ -341,6 +342,16 @@ resources:
       # Safe here for the same reason it is safe for the Snowflake fields above:
       # SELECT stores the value exactly as given and returns it unchanged.
       s3_prefix:
+        computed_optional_required: optional
+
+      # The API never returns these, so they can only ever hold what the
+      # configuration says. Leaving them computed would promise a value that no
+      # read can supply.
+      credentials.access_key_id:
+        computed_optional_required: optional
+      credentials.secret_access_key:
+        computed_optional_required: optional
+      credentials.role_arn:
         computed_optional_required: optional
 
       # SELECT assigns each of these once, when the connection is added, and never

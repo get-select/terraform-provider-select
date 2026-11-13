@@ -39,12 +39,14 @@ const (
 	fieldName         = "name"
 )
 
-// awsCredentialsPayload mirrors the API's AwsCredentials. Both fields are
-// required: the API has no way to change one without the other, so a rotation
-// moves them together.
+// awsCredentialsPayload mirrors the API's AwsCredentials. Every field but
+// authentication_method is omitted when empty, because the API rejects a field
+// that does not belong to the chosen method.
 type awsCredentialsPayload struct {
-	AccessKeyId     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
+	AuthenticationMethod string  `json:"authentication_method"`
+	AccessKeyId          *string `json:"access_key_id,omitempty"`
+	SecretAccessKey      *string `json:"secret_access_key,omitempty"`
+	RoleArn              *string `json:"role_arn,omitempty"`
 }
 
 // awsConnectionCreatePayload mirrors AwsAccountCreate. sync_enabled has a schema
@@ -113,8 +115,10 @@ type awsConnectionResponse struct {
 
 func buildAwsCredentials(credentials resource_aws_connection.CredentialsValue) awsCredentialsPayload {
 	return awsCredentialsPayload{
-		AccessKeyId:     credentials.AccessKeyId.ValueString(),
-		SecretAccessKey: credentials.SecretAccessKey.ValueString(),
+		AuthenticationMethod: credentials.AuthenticationMethod.ValueString(),
+		AccessKeyId:          stringPointer(credentials.AccessKeyId),
+		SecretAccessKey:      stringPointer(credentials.SecretAccessKey),
+		RoleArn:              stringPointer(credentials.RoleArn),
 	}
 }
 
@@ -152,8 +156,8 @@ func buildAwsConnectionUpdate(plan, state *resource_aws_connection.AwsConnection
 
 // applyAwsConnectionResponse writes an API response onto the model. The
 // credentials block is carried over from source rather than the response, since
-// the API returns neither the access key id nor the secret on this resource and
-// Terraform's own configuration is the only record of them.
+// the API returns no credentials on this resource and Terraform's own
+// configuration is the only record of them.
 //
 // Nothing here goes through a preserveEquivalent* helper: SELECT stores every
 // field on this resource exactly as given and returns it unchanged, so there is
