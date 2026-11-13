@@ -143,8 +143,7 @@ jobs:
       TF_VAR_aws_s3_bucket: ${{ secrets.TF_E2E_AWS_S3_BUCKET }}
       TF_VAR_aws_s3_prefix: ${{ secrets.TF_E2E_AWS_S3_PREFIX }}
       TF_VAR_aws_region: ${{ secrets.TF_E2E_AWS_REGION }}
-      TF_VAR_aws_access_key_id: ${{ secrets.TF_E2E_AWS_ACCESS_KEY_ID }}
-      TF_VAR_aws_secret_access_key: ${{ secrets.TF_E2E_AWS_SECRET_ACCESS_KEY }}
+      TF_VAR_aws_role_arn: ${{ secrets.TF_E2E_AWS_ROLE_ARN }}
 
       # Budget. No credentials of its own: creating a budget makes no call to
       # an external system, so only the name needs to carry the run id.
