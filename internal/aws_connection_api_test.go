@@ -81,9 +81,6 @@ func TestAwsCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 	}
 }
 
-// A report delivered at the root of the bucket has no prefix, and the API takes
-// an absent s3_prefix to mean exactly that — so an unset one is omitted rather
-// than sent as a null the API would have to interpret.
 // A role carries only its method and ARN: the API rejects access key fields
 // sent alongside a role.
 func TestAwsCreatePayloadSendsOnlyTheRoleForARoleConnection(t *testing.T) {
@@ -110,6 +107,9 @@ func TestAwsCreatePayloadSendsOnlyTheRoleForARoleConnection(t *testing.T) {
 	}
 }
 
+// A report delivered at the root of the bucket has no prefix, and the API takes
+// an absent s3_prefix to mean exactly that — so an unset one is omitted rather
+// than sent as a null the API would have to interpret.
 func TestAwsCreatePayloadOmitsUnsetPrefix(t *testing.T) {
 	plan := awsConnection()
 	plan.S3Prefix = types.StringNull()
