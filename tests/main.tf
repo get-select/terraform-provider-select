@@ -990,14 +990,10 @@ output "sso_group_team_member_id" {
 # SELECT never runs it and sends nothing to the example.com address or the
 # dummy webhook URL.
 #
-# The data source refers to the managed integration, so Terraform reads it
-# during apply, after the integration exists.
-resource "select_alert_integration" "email" {
-  count = var.enable_monitor_tests ? 1 : 0
-
-  integration_type = "email"
-}
-
+# The email integration is read, not managed. The test organization must have
+# email enabled. Other destinations in the organization use it, so SELECT
+# refuses to disable it, and a destroy of a managed integration fails. The MS
+# Teams integration is managed, to test the select_alert_integration resource.
 resource "select_alert_integration" "ms_teams" {
   count = var.enable_monitor_tests ? 1 : 0
 
@@ -1007,13 +1003,13 @@ resource "select_alert_integration" "ms_teams" {
 data "select_alert_integration" "email" {
   count = var.enable_monitor_tests ? 1 : 0
 
-  integration_type = select_alert_integration.email[0].integration_type
+  integration_type = "email"
 }
 
 resource "select_email_alert_destination" "test" {
   count = var.enable_monitor_tests ? 1 : 0
 
-  integration_id = select_alert_integration.email[0].id
+  integration_id = data.select_alert_integration.email[0].id
   email_address  = "${var.monitor_name}@example.com"
 }
 

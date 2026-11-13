@@ -140,9 +140,13 @@ When a suite gets a 403 such as `This caller lacks the monitors:read scope`,
 add the scope to the key in `select_e2e`. A key in a different organization
 does not change what CI can do.
 
-Do not point CI at the SELECT organization. The monitor suite manages
-`select_alert_integration`, and a destroy disables that integration for the
-full organization.
+Do not point CI at the SELECT organization. The monitor suite manages the MS
+Teams `select_alert_integration`, and a destroy disables that integration for
+the full organization.
+
+`select_e2e` must keep email alerts enabled. The monitor suite reads the email
+integration with the data source and does not manage it: other destinations
+use it, so SELECT refuses to disable it.
 
 **Snowflake is excluded from the matrix for now.** SELECT enforces one global
 claim per Snowflake organization across every SELECT org, not per-account, and

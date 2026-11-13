@@ -5,9 +5,11 @@
 # sends to both destinations. Slack is not tested: its integration needs a
 # browser sign-in. Run with `make test-monitor`.
 #
-# The alert integrations are organization-wide, so this one suite manages
-# integrations, destinations and the monitor together. Two suites that ran at
-# the same time could disable an integration under each other.
+# The alert integrations are organization-wide. The suite manages the MS Teams
+# integration and reads the email integration, which the test organization
+# must have enabled: other destinations use it, so SELECT refuses to disable
+# it. Two suites that ran at the same time could disable the MS Teams
+# integration under each other.
 
 variables {
   enable_monitor_tests = true
@@ -39,8 +41,8 @@ run "create_monitor" {
   }
 
   assert {
-    condition     = data.select_alert_integration.email[0].id == select_alert_integration.email[0].id
-    error_message = "The data source should find the managed email integration"
+    condition     = data.select_alert_integration.email[0].id != ""
+    error_message = "The data source should find the organization's email integration"
   }
 
   assert {

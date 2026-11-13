@@ -214,9 +214,10 @@ test-sso-group:
 # Monitor tests: select_alert_integration (resource and data source), the
 # email and MS Teams alert destinations, and a budget_threshold monitor. No
 # resource here calls an external system on create, so this needs only the API
-# key and organization every other test already uses. Destroy disables the
-# email and MS Teams webhook integrations for the full organization, so run it
-# only against a test organization.
+# key and organization every other test already uses. The organization must
+# have email alerts enabled; the suite reads that integration. Destroy disables
+# the MS Teams webhook integration for the full organization, so run it only
+# against a test organization.
 #
 # Required environment:
 #   TF_VAR_select_api_key      an API key with monitors, alert_destinations,
