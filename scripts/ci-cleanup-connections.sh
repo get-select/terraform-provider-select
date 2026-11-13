@@ -38,7 +38,7 @@
 # Environment:
 #   SELECT_API_KEY          key with <resource>:read and :write for every
 #                           collection below, and for users, default_roles,
-#                           sso_groups and destinations
+#                           sso_groups and alert_destinations
 #   SELECT_ORGANIZATION_ID  organization the resources belong to
 #   SELECT_API_URL          defaults to https://api.select.dev
 #   CI_RESOURCE_PREFIX      defaults to terraform-test

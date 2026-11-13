@@ -27,8 +27,8 @@ func alertDestinationErrors(noun string) v2ErrorFormat {
 		Noun:       noun,
 		Subject:    "the destination",
 		Object:     "the destination",
-		ReadScope:  "destinations:read",
-		WriteScope: "destinations:write",
+		ReadScope:  "alert_destinations:read",
+		WriteScope: "alert_destinations:write",
 	}
 }
 

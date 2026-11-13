@@ -219,7 +219,7 @@ test-sso-group:
 # only against a test organization.
 #
 # Required environment:
-#   TF_VAR_select_api_key      an API key with monitors, destinations,
+#   TF_VAR_select_api_key      an API key with monitors, alert_destinations,
 #                              alert_integrations and budgets read and write scopes
 #   TF_VAR_select_organization_id
 # Optional:
