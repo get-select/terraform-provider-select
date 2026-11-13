@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MPL-2.0
 #
-# Delete connections, budgets, usage group sets, teams, SSO groups and role
-# grants a test run left attached to the organization.
+# Delete connections, monitors, alert destinations, budgets, usage group sets,
+# teams, SSO groups and role grants a test run left attached to the
+# organization.
 #
 # `terraform test` destroys what it created, but a run cancelled mid-apply — or
 # one whose destroy the API refused — leaves a resource behind. The next run
@@ -36,8 +37,8 @@
 #
 # Environment:
 #   SELECT_API_KEY          key with <resource>:read and :write for every
-#                           collection below, and for users, default_roles and
-#                           sso_groups
+#                           collection below, and for users, default_roles,
+#                           sso_groups and alert_destinations
 #   SELECT_ORGANIZATION_ID  organization the resources belong to
 #   SELECT_API_URL          defaults to https://api.select.dev
 #   CI_RESOURCE_PREFIX      defaults to terraform-test
@@ -57,6 +58,10 @@ USER_EMAILS="${CI_SWEEP_USER_EMAILS:-}"
 KEEP_SETS=" "
 
 COLLECTIONS=(
+  # A monitor refers to a budget and to destinations, and SELECT refuses to
+  # delete a destination that a monitor sends to. So monitors go first, and
+  # sweep_destinations runs after this list.
+  monitors
   snowflake-accounts
   databricks-connections
   bigquery-connections
@@ -281,6 +286,26 @@ sweep_sso_groups() {
   done < <(jq -r --arg prefix "$PREFIX" 'select(.name | startswith($prefix)) | [.id, .etag] | @tsv' <<<"$groups")
 }
 
+# Delete every alert destination whose email address or channel starts with
+# the prefix. A destination has no name, so the monitor suite starts both with
+# its monitor's name. The alert integrations are not swept: each is
+# organization-wide and has no name to match.
+sweep_destinations() {
+  local destinations
+
+  if ! destinations="$(list_items /destinations)"; then
+    failed=$((failed + 1))
+    return
+  fi
+  while IFS=$'\t' read -r id etag label; do
+    [[ -n "$id" ]] || continue
+    delete_item "/destinations/${id}" "$etag" "$label" || true
+  done < <(jq -r --arg prefix "$PREFIX" '
+      (.email_address // .channel // "") as $label
+      | select($label | startswith($prefix))
+      | [.id, .etag, $label] | @tsv' <<<"$destinations")
+}
+
 echo "Sweeping resources named '${PREFIX}*' from organization ${SELECT_ORGANIZATION_ID} at ${API_URL}"
 echo "default-roles:"
 sweep_default_roles
@@ -292,6 +317,8 @@ for collection in "${COLLECTIONS[@]}"; do
   echo "${collection}:"
   sweep_collection "$collection"
 done
+echo "destinations:"
+sweep_destinations
 
 echo "Sweep complete: ${deleted} deleted, ${failed} failed."
 # A leak left behind breaks the next run, so it fails the step rather than being

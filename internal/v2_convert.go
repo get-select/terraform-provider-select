@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"reflect"
 	"strings"
 	"time"
 
@@ -102,6 +103,16 @@ func numberPointer(value types.Number) *float64 {
 	return &result
 }
 
+// float64Pointer returns nil for a null or unknown value, so an omitempty
+// field is left out of the request rather than sent as 0.
+func float64Pointer(value types.Float64) *float64 {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+	result := value.ValueFloat64()
+	return &result
+}
+
 // int64Pointer returns nil for a null or unknown value, so an omitempty field
 // is left out of the request rather than sent as 0.
 func int64Pointer(value types.Int64) *int64 {
@@ -180,6 +191,13 @@ func boolValue(value *bool) types.Bool {
 	return types.BoolValue(*value)
 }
 
+func float64Value(value *float64) types.Float64 {
+	if value == nil {
+		return types.Float64Null()
+	}
+	return types.Float64Value(*value)
+}
+
 func int64Value(value *int64) types.Int64 {
 	if value == nil {
 		return types.Int64Null()
@@ -224,6 +242,69 @@ func preserveEquivalentJSON(configured types.String, returned *string) types.Str
 		return configured
 	}
 	return types.StringValue(*returned)
+}
+
+// preserveConfiguredJSON keeps the configured spelling of a JSON document when
+// the returned document holds every configured key with an equal value. The
+// returned document can have more keys: the API adds defaults and generated
+// text that the configuration did not set. A change to a configured key reads
+// as drift. A key that only the API sets does not.
+//
+// When the configuration has no value, as on the first Read after an import,
+// this gives the same result as preserveEquivalentJSON.
+func preserveConfiguredJSON(configured types.String, returned *string) types.String {
+	if returned == nil || configured.IsNull() || configured.IsUnknown() {
+		return preserveEquivalentJSON(configured, returned)
+	}
+	var want, got any
+	if json.Unmarshal([]byte(configured.ValueString()), &want) != nil ||
+		json.Unmarshal([]byte(*returned), &got) != nil {
+		return preserveEquivalentJSON(configured, returned)
+	}
+	if jsonSubset(want, got) {
+		return configured
+	}
+	return preserveEquivalentJSON(configured, returned)
+}
+
+// jsonSubset reports whether got holds every value in want. Objects compare
+// key by key, and got can have more keys. Arrays compare element by element
+// and must have the same length. A null in want sets nothing, so it matches
+// any value in got and a missing key: the API fills a null chart title with a
+// generated one.
+func jsonSubset(want, got any) bool {
+	switch w := want.(type) {
+	case nil:
+		return true
+	case map[string]any:
+		g, ok := got.(map[string]any)
+		if !ok {
+			return false
+		}
+		for key, value := range w {
+			gv, present := g[key]
+			if !present && value != nil {
+				return false
+			}
+			if !jsonSubset(value, gv) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		g, ok := got.([]any)
+		if !ok || len(g) != len(w) {
+			return false
+		}
+		for i := range w {
+			if !jsonSubset(w[i], g[i]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return reflect.DeepEqual(want, got)
+	}
 }
 
 // preserveEquivalentList keeps a null configuration as null when the API

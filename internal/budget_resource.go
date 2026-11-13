@@ -161,10 +161,11 @@ func NewBudgetResource() resource.Resource {
 	}
 }
 
-// scheduleFieldRules records, per schedule_type, which of period's optional
-// fields are required and which are allowed at all — the same shape
-// credentialFieldsByMethod uses for Snowflake's authentication methods.
-type scheduleFieldRules struct {
+// variantFieldRules records, per variant of a discriminated union, which of
+// its optional fields are required and which are allowed at all — the same
+// shape credentialFieldsByMethod uses for Snowflake's authentication methods.
+// A budget's period and a monitor's trigger_config use it.
+type variantFieldRules struct {
 	required []string
 	allowed  []string
 }
@@ -172,11 +173,11 @@ type scheduleFieldRules struct {
 // recurringScheduleFields is shared by weekly, monthly, quarterly and yearly:
 // none of the four requires anything beyond start_date, and all four accept
 // the same pair of optional expiry fields.
-var recurringScheduleFields = scheduleFieldRules{
+var recurringScheduleFields = variantFieldRules{
 	allowed: []string{"expires_on", "expires_after_occurrences"},
 }
 
-var budgetScheduleFields = map[string]scheduleFieldRules{
+var budgetScheduleFields = map[string]variantFieldRules{
 	"fixed_range": {
 		required: []string{"end_date"},
 		allowed:  []string{"end_date"},
@@ -249,6 +250,19 @@ func validateBudgetPeriod(ctx context.Context, period types.Object) diag.Diagnos
 		"expires_after_occurrences": !model.ExpiresAfterOccurrences.IsNull() && !model.ExpiresAfterOccurrences.IsUnknown(),
 	}
 
+	diags.Append(rules.check(present, "Budget Period", "period", "schedule_type", scheduleType)...)
+	return diags
+}
+
+// check reports the fields in present that rules requires but that are not
+// set, and the fields that are set but that rules does not allow. present maps
+// a field name to whether the configuration sets it. noun names the union in
+// the diagnostic summary, attribute is the union's attribute path,
+// discriminator is the field that picks the variant, and variant is its value.
+// The field names are sorted so the message does not depend on map order.
+func (rules variantFieldRules) check(present map[string]bool, noun, attribute, discriminator, variant string) diag.Diagnostics {
+	var diags diag.Diagnostics
+
 	var missing []string
 	for _, field := range rules.required {
 		if !present[field] {
@@ -258,9 +272,9 @@ func validateBudgetPeriod(ctx context.Context, period types.Object) diag.Diagnos
 	if len(missing) > 0 {
 		sort.Strings(missing)
 		diags.AddError(
-			"Incomplete Budget Period",
-			fmt.Sprintf("period.%s is required for schedule_type %q.",
-				strings.Join(missing, ", period."), scheduleType),
+			"Incomplete "+noun,
+			fmt.Sprintf("%s.%s is required for %s %q.",
+				attribute, strings.Join(missing, ", "+attribute+"."), discriminator, variant),
 		)
 	}
 
@@ -277,9 +291,9 @@ func validateBudgetPeriod(ctx context.Context, period types.Object) diag.Diagnos
 	if len(unexpected) > 0 {
 		sort.Strings(unexpected)
 		diags.AddError(
-			"Unused Budget Period Fields",
-			fmt.Sprintf("period.%s is not valid for schedule_type %q.",
-				strings.Join(unexpected, ", period."), scheduleType),
+			"Unused "+noun+" Fields",
+			fmt.Sprintf("%s.%s is not valid for %s %q.",
+				attribute, strings.Join(unexpected, ", "+attribute+"."), discriminator, variant),
 		)
 	}
 

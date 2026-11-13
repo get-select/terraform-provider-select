@@ -278,6 +278,41 @@ resources:
       create_time:
         use_state_for_unknown: true
 
+  monitor:
+    description: >-
+      A monitor: a scheduled query that sends an alert or a digest to one or more
+      destinations when its trigger condition is met.
+
+    description_sources:
+      - MonitorCreate
+      - MonitorV2
+
+    attributes:
+      # An update is a PUT of the full create body, so a null clears each of
+      # these. The generator makes them optional+computed because they appear in
+      # both the request and the response, but optional+computed keeps the state
+      # value when the configuration removes the attribute. Plain optional sends
+      # the null that clears it.
+      cron:
+        computed_optional_required: optional
+      team_id:
+        computed_optional_required: optional
+      budget_id:
+        computed_optional_required: optional
+      snowflake_account_id:
+        computed_optional_required: optional
+
+      # SELECT assigns these once, when the monitor is created.
+      #
+      # Deliberately not listed: status, which changes with each run, and etag,
+      # update_time, updated_by and type, which change with an update.
+      id:
+        use_state_for_unknown: true
+      created_by:
+        use_state_for_unknown: true
+      create_time:
+        use_state_for_unknown: true
+
   aws_connection:
     description: >-
       A connection to one AWS account: the S3 location AWS delivers its Cost

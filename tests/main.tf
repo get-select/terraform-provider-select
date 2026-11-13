@@ -532,6 +532,48 @@ variable "sso_group_roles_updated" {
   default     = false
 }
 
+# Monitor test variables.
+#
+# The monitor suite manages the email and MS Teams webhook alert integrations,
+# an email and an MS Teams destination, a budget and a budget_threshold
+# monitor. None of them calls an external system on create: SELECT does not
+# check an email address or a webhook URL until it sends. The suite needs only
+# the API key and organization every other test already uses. It defaults to
+# off so provider.tftest.hcl and `make test`/`test-all` are unaffected.
+#
+# The alert integrations are organization-wide. Destroy disables them for the
+# full test organization, so only this one suite may manage them.
+variable "enable_monitor_tests" {
+  description = "Whether to manage real alert integrations, destinations and a monitor"
+  type        = bool
+  default     = false
+}
+
+variable "monitor_name" {
+  description = "Name of the test monitor. Also the start of its budget's name, its email address and its Teams channel, so the sweep finds them."
+  type        = string
+  default     = "terraform-test-monitor"
+}
+
+# A run block cannot build a second name, so the suffix is its own variable.
+variable "monitor_name_suffix" {
+  description = "Appended to the monitor name, so a run block can rename without restating it"
+  type        = string
+  default     = ""
+}
+
+variable "monitor_threshold" {
+  description = "The percent of the budget at which the test monitor sends"
+  type        = number
+  default     = 80
+}
+
+variable "monitor_teams_channel_suffix" {
+  description = "Appended to the Teams destination's channel, so a run block can update it in place"
+  type        = string
+  default     = ""
+}
+
 # Provider configuration
 provider "select" {
   api_key         = var.select_api_key
@@ -942,4 +984,99 @@ output "default_role_id" {
 
 output "sso_group_team_member_id" {
   value = one(select_team_member.sso_group[*].id)
+}
+
+# Alert integrations, destinations and a monitor. The monitor is disabled, so
+# SELECT never runs it and sends nothing to the example.com address or the
+# dummy webhook URL.
+#
+# The email integration is read, not managed. The test organization must have
+# email enabled. Other destinations in the organization use it, so SELECT
+# refuses to disable it, and a destroy of a managed integration fails. The MS
+# Teams integration is managed, to test the select_alert_integration resource.
+resource "select_alert_integration" "ms_teams" {
+  count = var.enable_monitor_tests ? 1 : 0
+
+  integration_type = "ms_teams_webhook"
+}
+
+data "select_alert_integration" "email" {
+  count = var.enable_monitor_tests ? 1 : 0
+
+  integration_type = "email"
+}
+
+resource "select_email_alert_destination" "test" {
+  count = var.enable_monitor_tests ? 1 : 0
+
+  integration_id = data.select_alert_integration.email[0].id
+  email_address  = "${var.monitor_name}@example.com"
+}
+
+resource "select_ms_teams_alert_destination" "test" {
+  count = var.enable_monitor_tests ? 1 : 0
+
+  integration_id = select_alert_integration.ms_teams[0].id
+  channel        = "${var.monitor_name}-teams${var.monitor_teams_channel_suffix}"
+  webhook_url    = "https://example.webhook.office.com/webhookb2/terraform-test"
+}
+
+resource "select_budget" "monitor" {
+  count = var.enable_monitor_tests ? 1 : 0
+
+  name   = "${var.monitor_name}-budget"
+  amount = 1000
+
+  period = {
+    schedule_type = "monthly"
+    start_date    = "2026-01-01"
+  }
+}
+
+resource "select_monitor" "test" {
+  count = var.enable_monitor_tests ? 1 : 0
+
+  name        = "${var.monitor_name}${var.monitor_name_suffix}"
+  data_source = "budget"
+  state       = "disabled"
+  schedule    = "daily"
+  budget_id   = select_budget.monitor[0].id
+
+  destination_ids = [
+    select_email_alert_destination.test[0].id,
+    select_ms_teams_alert_destination.test[0].id,
+  ]
+
+  notification_frequency_config = {
+    frequency_type = "on_trigger"
+  }
+
+  trigger_config = {
+    type = "budget_threshold"
+    thresholds = [
+      {
+        metric = "actual_spend"
+        unit   = "percent"
+        value  = var.monitor_threshold
+      },
+    ]
+  }
+
+  message_config_json = jsonencode({
+    sections = [
+      { section_type = "title" },
+    ]
+  })
+}
+
+output "monitor_id" {
+  value = one(select_monitor.test[*].id)
+}
+
+output "email_alert_destination_id" {
+  value = one(select_email_alert_destination.test[*].id)
+}
+
+output "ms_teams_alert_destination_id" {
+  value = one(select_ms_teams_alert_destination.test[*].id)
 }

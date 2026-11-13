@@ -179,6 +179,7 @@ func (p *selectProvider) DataSources(ctx context.Context) []func() datasource.Da
 	return []func() datasource.DataSource{
 		NewTeamDataSource,
 		NewUsersDataSource,
+		NewAlertIntegrationDataSource,
 	}
 }
 
@@ -197,5 +198,10 @@ func (p *selectProvider) Resources(ctx context.Context) []func() resource.Resour
 		NewUserRoleResource,
 		NewDefaultRoleResource,
 		NewSsoGroupResource,
+		NewMonitorResource,
+		NewSlackAlertDestinationResource,
+		NewEmailAlertDestinationResource,
+		NewMsTeamsAlertDestinationResource,
+		NewAlertIntegrationResource,
 	}
 }

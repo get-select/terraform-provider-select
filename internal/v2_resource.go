@@ -75,6 +75,11 @@ type v2Resource[TModel, TResponse any] struct {
 
 	createPayload func(ctx context.Context, plan *TModel) (any, diag.Diagnostics)
 	updatePayload func(ctx context.Context, plan, state *TModel) (any, diag.Diagnostics)
+	// updateMethod is the HTTP method Update sends. Empty means PATCH, the
+	// merge patch that most v2 resources take. A resource whose API has a full
+	// replacement, such as the PUT of a monitor, sets http.MethodPut and sends
+	// its create body.
+	updateMethod  string
 	applyResponse func(ctx context.Context, model, source *TModel, response *TResponse) diag.Diagnostics
 	// validateConfig runs a resource's plan-time checks beyond what the
 	// generated schema already enforces. Nil for a resource with none.
@@ -363,7 +368,7 @@ func (r *v2Resource[TModel, TResponse]) Update(ctx context.Context, req resource
 	}
 
 	var response TResponse
-	apiErr, diags := r.write(ctx, http.MethodPatch, &state, request, &response)
+	apiErr, diags := r.write(ctx, r.updateHTTPMethod(), &state, request, &response)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -379,6 +384,14 @@ func (r *v2Resource[TModel, TResponse]) Update(ctx context.Context, req resource
 		return
 	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &updated)...)
+}
+
+// updateHTTPMethod returns the method Update sends. See updateMethod.
+func (r *v2Resource[TModel, TResponse]) updateHTTPMethod() string {
+	if r.updateMethod == "" {
+		return http.MethodPatch
+	}
+	return r.updateMethod
 }
 
 func (r *v2Resource[TModel, TResponse]) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

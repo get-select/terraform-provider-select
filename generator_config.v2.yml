@@ -211,6 +211,54 @@ resources:
               Null counts all spend. The root of the filter must be a group —
               `{"operator": "and"|"or", "filters": [...]}` — not a single leaf filter.
 
+  # trigger_config, message_config and notification_frequency_config are oneOf
+  # unions, which make tfplugingen-openapi drop the whole resource.
+  # destination_ids and partition_config are reshaped. monitor_resource.go
+  # writes these five attributes by hand. The run and feed fields change on
+  # every run and do not configure the monitor, so they are not in state.
+  monitor:
+    create:
+      path: /monitors
+      method: POST
+    read:
+      path: /monitors/{monitor_id}
+      method: GET
+    update:
+      path: /monitors/{monitor_id}
+      method: PUT
+    delete:
+      path: /monitors/{monitor_id}
+      method: DELETE
+    schema:
+      ignores:
+        - trigger_config
+        - message_config
+        - notification_frequency_config
+        - partition_config
+        - destination_ids
+        - last_run_status
+        - latest_run_status
+        - latest_run_error_message
+        - latest_notification_send_time
+        - latest_run_trigger_status
+        - last_run_finish_time
+        - next_run_time
+        - dismiss_time
+        - dismissed_by
+        - dismissed_partitions
+      attributes:
+        aliases:
+          monitor_id: id
+        overrides:
+          id:
+            description: >-
+              The monitor's identifier in SELECT, assigned when it is created. Use it
+              with `terraform import` to bring an existing monitor under management.
+          etag:
+            description: >-
+              Opaque strong ETag for this monitor. Sent as `If-Match` on updates and
+              deletes so a change made outside Terraform cannot be silently overwritten.
+
   usage_group_set:
     create:
       path: /usage-group-sets
