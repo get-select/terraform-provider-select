@@ -724,8 +724,9 @@ resource "select_aws_connection" "test" {
   region         = var.aws_region
 
   credentials = {
-    access_key_id     = var.aws_access_key_id
-    secret_access_key = var.aws_secret_access_key
+    authentication_method = "access_key"
+    access_key_id         = var.aws_access_key_id
+    secret_access_key     = var.aws_secret_access_key
   }
 
   sync_enabled = var.aws_sync_enabled

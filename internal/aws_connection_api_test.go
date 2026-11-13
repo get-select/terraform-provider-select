@@ -17,8 +17,22 @@ func awsCredentials(accessKeyId, secretAccessKey string) resource_aws_connection
 	return resource_aws_connection.NewCredentialsValueMust(
 		resource_aws_connection.CredentialsValue{}.AttributeTypes(context.Background()),
 		map[string]attr.Value{
-			"access_key_id":     types.StringValue(accessKeyId),
-			"secret_access_key": types.StringValue(secretAccessKey),
+			"authentication_method": types.StringValue("access_key"),
+			"access_key_id":         types.StringValue(accessKeyId),
+			"secret_access_key":     types.StringValue(secretAccessKey),
+			"role_arn":              types.StringNull(),
+		},
+	)
+}
+
+func awsRoleCredentials(roleArn string) resource_aws_connection.CredentialsValue {
+	return resource_aws_connection.NewCredentialsValueMust(
+		resource_aws_connection.CredentialsValue{}.AttributeTypes(context.Background()),
+		map[string]attr.Value{
+			"authentication_method": types.StringValue("role"),
+			"access_key_id":         types.StringNull(),
+			"secret_access_key":     types.StringNull(),
+			"role_arn":              types.StringValue(roleArn),
 		},
 	)
 }
@@ -64,6 +78,32 @@ func TestAwsCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 	}
 	if credentials["access_key_id"] != "AKIAEXAMPLEONE" || credentials["secret_access_key"] != "secret-one" {
 		t.Errorf("both halves of the key pair should be sent, got %v", credentials)
+	}
+}
+
+// A role carries only its method and ARN: the API rejects access key fields
+// sent alongside a role.
+func TestAwsCreatePayloadSendsOnlyTheRoleForARoleConnection(t *testing.T) {
+	plan := awsConnection()
+	plan.Credentials = awsRoleCredentials("arn:aws:iam::123456789012:role/select-cur-read")
+
+	payload := marshal(t, buildAwsConnectionCreate(&plan))
+
+	credentials, ok := payload["credentials"].(map[string]any)
+	if !ok {
+		t.Fatalf("credentials should be an object, got %v", payload["credentials"])
+	}
+	expected := map[string]any{
+		"authentication_method": "role",
+		"role_arn":              "arn:aws:iam::123456789012:role/select-cur-read",
+	}
+	if len(credentials) != len(expected) {
+		t.Errorf("credentials should hold only %v, got %v", expected, credentials)
+	}
+	for field, value := range expected {
+		if credentials[field] != value {
+			t.Errorf("credentials.%s should be %v, got %v", field, value, credentials[field])
+		}
 	}
 }
 
