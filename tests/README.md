@@ -130,6 +130,20 @@ against *pre-existing* Snowflake connections (so `CREATE_` distinguishes the
 ones its create-flow test provisions); this repo never has that second kind, so
 its names drop the `CREATE_`.
 
+### The CI organization
+
+CI runs against the `select_e2e` organization, not the SELECT organization.
+`TF_E2E_SELECT_ORG_ID` holds its id, and `TF_E2E_SELECT_API_KEY` must be a key
+from `select_e2e`. GitHub masks both values in the logs.
+
+When a suite gets a 403 such as `This caller lacks the monitors:read scope`,
+add the scope to the key in `select_e2e`. A key in a different organization
+does not change what CI can do.
+
+Do not point CI at the SELECT organization. The monitor suite manages
+`select_alert_integration`, and a destroy disables that integration for the
+full organization.
+
 **Snowflake is excluded from the matrix for now.** SELECT enforces one global
 claim per Snowflake organization across every SELECT org, not per-account, and
 every Snowflake test account currently available is already claimed by a
