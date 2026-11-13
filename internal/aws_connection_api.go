@@ -39,14 +39,10 @@ const (
 	fieldName         = "name"
 )
 
-// awsCredentialsPayload mirrors the API's AwsCredentials. Every field but
-// authentication_method is omitted when empty, because the API rejects a field
-// that does not belong to the chosen method.
+// awsCredentialsPayload mirrors the API's AwsCredentials: the role SELECT
+// assumes to read the account's report.
 type awsCredentialsPayload struct {
-	AuthenticationMethod string  `json:"authentication_method"`
-	AccessKeyId          *string `json:"access_key_id,omitempty"`
-	SecretAccessKey      *string `json:"secret_access_key,omitempty"`
-	RoleArn              *string `json:"role_arn,omitempty"`
+	RoleArn string `json:"role_arn"`
 }
 
 // awsConnectionCreatePayload mirrors AwsAccountCreate. sync_enabled has a schema
@@ -76,9 +72,7 @@ type awsConnectionCreatePayload struct {
 //   - SELECT re-validates against S3 when aws_account_id, s3_bucket,
 //     s3_prefix, region or credentials are *present* in the patch, not when they
 //     change. Sending them unconditionally would turn renaming a connection into
-//     a live round trip to S3 that an AWS outage could fail. Omitting credentials
-//     additionally avoids rewriting the stored secret on an apply that has
-//     nothing to do with it.
+//     a live round trip to S3 that an AWS outage could fail.
 //
 // s3_prefix is a *nullableString rather than a *string because it has to say
 // three things: omitted leaves the prefix alone, an explicit null moves the
@@ -94,9 +88,8 @@ type awsConnectionUpdatePayload struct {
 	SyncEnabled  *bool                  `json:"sync_enabled,omitempty"`
 }
 
-// awsConnectionResponse mirrors AwsAccount. It carries no credentials: the API
-// stores the secret access key in a secret store and returns neither half of the
-// pair on this resource.
+// awsConnectionResponse mirrors AwsAccount. It carries no credentials, so the
+// role comes from the configuration (see applyAwsConnectionResponse).
 type awsConnectionResponse struct {
 	Id                     string  `json:"id"`
 	Etag                   string  `json:"etag"`
@@ -115,10 +108,7 @@ type awsConnectionResponse struct {
 
 func buildAwsCredentials(credentials resource_aws_connection.CredentialsValue) awsCredentialsPayload {
 	return awsCredentialsPayload{
-		AuthenticationMethod: credentials.AuthenticationMethod.ValueString(),
-		AccessKeyId:          stringPointer(credentials.AccessKeyId),
-		SecretAccessKey:      stringPointer(credentials.SecretAccessKey),
-		RoleArn:              stringPointer(credentials.RoleArn),
+		RoleArn: credentials.RoleArn.ValueString(),
 	}
 }
 
@@ -198,8 +188,7 @@ func awsConnectionAPIDiagnostic(operation string, apiErr *apiError) diag.Diagnos
 }
 
 // awsConnectionSpecificDiagnostic is this resource's own opinion about an API
-// failure: the several situations a 409 conflict covers, and the credential
-// store's own outage status. Everything else this resource can hit — the
+// failure: the several situations a 409 conflict covers. Everything else this resource can hit — the
 // validation report, precondition failures, and missing scopes — is worded the
 // same for every v2 resource, so it is handled by v2ErrorFormat.diagnostic
 // instead of here.
@@ -237,15 +226,6 @@ func awsConnectionSpecificDiagnostic(operation string, apiErr *apiError) diag.Di
 					operation, apiErr.Detail),
 			)
 		}
-	case http.StatusServiceUnavailable:
-		// SELECT keeps the secret access key in a secret store it reaches on every
-		// write, so this says nothing about the configuration and retrying works.
-		return diag.NewErrorDiagnostic(
-			"SELECT Credential Store Unavailable",
-			fmt.Sprintf("SELECT could not %s because its credential store is temporarily "+
-				"unavailable. Nothing about the configuration is wrong; run `terraform apply` "+
-				"again.\n\n%s", operation, apiErr.Detail),
-		)
 	default:
 		return nil
 	}

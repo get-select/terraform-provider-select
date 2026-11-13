@@ -13,26 +13,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func awsCredentials(accessKeyId, secretAccessKey string) resource_aws_connection.CredentialsValue {
+func awsCredentials(roleArn string) resource_aws_connection.CredentialsValue {
 	return resource_aws_connection.NewCredentialsValueMust(
 		resource_aws_connection.CredentialsValue{}.AttributeTypes(context.Background()),
 		map[string]attr.Value{
-			"authentication_method": types.StringValue("access_key"),
-			"access_key_id":         types.StringValue(accessKeyId),
-			"secret_access_key":     types.StringValue(secretAccessKey),
-			"role_arn":              types.StringNull(),
-		},
-	)
-}
-
-func awsRoleCredentials(roleArn string) resource_aws_connection.CredentialsValue {
-	return resource_aws_connection.NewCredentialsValueMust(
-		resource_aws_connection.CredentialsValue{}.AttributeTypes(context.Background()),
-		map[string]attr.Value{
-			"authentication_method": types.StringValue("role"),
-			"access_key_id":         types.StringNull(),
-			"secret_access_key":     types.StringNull(),
-			"role_arn":              types.StringValue(roleArn),
+			"role_arn": types.StringValue(roleArn),
 		},
 	)
 }
@@ -47,7 +32,7 @@ func awsConnection() resource_aws_connection.AwsConnectionModel {
 		S3Bucket:     types.StringValue("acme-cur"),
 		S3Prefix:     types.StringValue("reports/prod"),
 		Region:       types.StringValue("us-east-1"),
-		Credentials:  awsCredentials("AKIAEXAMPLEONE", "secret-one"),
+		Credentials:  awsCredentials("arn:aws:iam::123456789012:role/select-cur-read"),
 		SyncEnabled:  types.BoolValue(true),
 	}
 }
@@ -76,34 +61,8 @@ func TestAwsCreatePayloadCarriesEveryRequiredField(t *testing.T) {
 	if !ok {
 		t.Fatalf("credentials should be an object, got %v", payload["credentials"])
 	}
-	if credentials["access_key_id"] != "AKIAEXAMPLEONE" || credentials["secret_access_key"] != "secret-one" {
-		t.Errorf("both halves of the key pair should be sent, got %v", credentials)
-	}
-}
-
-// A role carries only its method and ARN: the API rejects access key fields
-// sent alongside a role.
-func TestAwsCreatePayloadSendsOnlyTheRoleForARoleConnection(t *testing.T) {
-	plan := awsConnection()
-	plan.Credentials = awsRoleCredentials("arn:aws:iam::123456789012:role/select-cur-read")
-
-	payload := marshal(t, buildAwsConnectionCreate(&plan))
-
-	credentials, ok := payload["credentials"].(map[string]any)
-	if !ok {
-		t.Fatalf("credentials should be an object, got %v", payload["credentials"])
-	}
-	expected := map[string]any{
-		"authentication_method": "role",
-		"role_arn":              "arn:aws:iam::123456789012:role/select-cur-read",
-	}
-	if len(credentials) != len(expected) {
-		t.Errorf("credentials should hold only %v, got %v", expected, credentials)
-	}
-	for field, value := range expected {
-		if credentials[field] != value {
-			t.Errorf("credentials.%s should be %v, got %v", field, value, credentials[field])
-		}
+	if len(credentials) != 1 || credentials["role_arn"] != "arn:aws:iam::123456789012:role/select-cur-read" {
+		t.Errorf("credentials should hold only the role ARN, got %v", credentials)
 	}
 }
 
@@ -148,7 +107,7 @@ func TestAwsUpdatePayloadSendsChangedFields(t *testing.T) {
 	state := awsConnection()
 	plan := awsConnection()
 	plan.Region = types.StringValue("eu-west-1")
-	plan.Credentials = awsCredentials("AKIAEXAMPLETWO", "secret-two")
+	plan.Credentials = awsCredentials("arn:aws:iam::123456789012:role/select-cur-read-v2")
 	plan.SyncEnabled = types.BoolValue(false)
 
 	payload := marshal(t, buildAwsConnectionUpdate(&plan, &state))
@@ -158,10 +117,10 @@ func TestAwsUpdatePayloadSendsChangedFields(t *testing.T) {
 	}
 	credentials, ok := payload["credentials"].(map[string]any)
 	if !ok {
-		t.Fatalf("rotated credentials should be sent as an object, got %v", payload["credentials"])
+		t.Fatalf("changed credentials should be sent as an object, got %v", payload["credentials"])
 	}
-	if credentials["access_key_id"] != "AKIAEXAMPLETWO" || credentials["secret_access_key"] != "secret-two" {
-		t.Errorf("a rotation should move both halves together, got %v", credentials)
+	if credentials["role_arn"] != "arn:aws:iam::123456789012:role/select-cur-read-v2" {
+		t.Errorf("the new role ARN should be sent, got %v", credentials)
 	}
 	// A pointer to false is still a value: omitempty must not swallow it.
 	if payload["sync_enabled"] != false {
@@ -343,16 +302,5 @@ func TestAwsConflictDiagnosticNamesDuplicateConnectionName(t *testing.T) {
 	}
 	if !strings.Contains(name.Detail(), "unique") {
 		t.Errorf("a duplicate name should explain that names must be unique, got: %s", name.Detail())
-	}
-}
-
-// The credential store is something SELECT reaches on every write, so its being
-// down says nothing about the configuration and the remedy is to apply again.
-func TestAwsCredentialStoreUnavailableIsRetryable(t *testing.T) {
-	unavailable := awsConnectionAPIDiagnostic("update the AWS connection",
-		newAPIError(503, `{"detail":"The credential store is temporarily unavailable.","code":"service_unavailable"}`))
-
-	if !strings.Contains(unavailable.Detail(), "again") {
-		t.Errorf("a transient failure should tell the user to retry, got: %s", unavailable.Detail())
 	}
 }
