@@ -49,6 +49,22 @@ SELECT adds keys to these documents when it stores them: defaults such as `perio
 
 The optional fields of `trigger_config` show a change when SELECT holds a value that the configuration does not set, with two exceptions. `trigger_on_upper_band` and `trigger_on_lower_band` do not show their default, `true`. An unset `query_json` on a `budget_threshold` trigger does not show a query that SELECT holds.
 
+### The message is usually a paragraph, a chart and a table
+
+`message_config_json.sections` is rendered top to bottom. A typical message has three sections, in this order:
+
+| order | `section_type` | purpose | usual settings |
+|---|---|---|---|
+| 1 | `paragraph` | States the result in one sentence. | The trigger's measure over one period. `include_period_over_period = true` and a `compare_with` period to show the change. `body_template` for custom text, or null for generated text. |
+| 2 | `chart` | Shows the trend. | The same measure over 30 periods, with the date grain as the only dimension and sorted ascending. `threshold` for a `condition` monitor, `bands` for an anomaly monitor. `highlight_last_point = true` for a non-anomaly monitor. |
+| 3 | `table` | Shows what drives the result. | `columns` with the column titles from `GET /v2/monitors/query-classes/{query_class}/columns`, sorted by the measure descending, with a `limit` of 10. |
+
+A `custom` monitor is different: its message has one `custom_sql_results` section.
+
+Each section has `enabled`, with a default of `true`. To hide a section, set `enabled = false`. Do not remove it from the list.
+
+The paragraph `body_template` is a Jinja template. Some of the values it can use are `period_analyzed`, `metric_name`, `latest_measure_value`, `latest_measure_value_pct_change`, `previous_period_measure_value`, `previous_period` and `threshold`. Do not use the `%{` sequence in a Terraform string, because Terraform reads it as a template directive. Jinja tags such as `{% if %}` are safe.
+
 ### An update replaces the full monitor
 
 An update sends `PUT /v2/monitors/{id}` with the full configuration. Removing `cron`, `team_id`, `budget_id`, `snowflake_account_id` or `partition_columns` from the configuration clears it.

@@ -12,8 +12,90 @@ This resource is backed by SELECT's v2 API, at `/v2/monitors`. The `api_key` con
 ## Example Usage
 
 ```terraform
+# A condition monitor: it posts to Slack when yesterday's spend is more than
+# 5000. GET /v2/monitors/query-classes lists the query classes, and
+# GET /v2/monitors/query-classes/{query_class}/columns lists their columns.
+resource "select_monitor" "daily_spend" {
+  name        = "Daily spend above 5000"
+  data_source = "organization_spend"
+  state       = "enabled"
+  schedule    = "daily"
+
+  destination_ids = [select_slack_alert_destination.alerts.id]
+
+  notification_frequency_config = {
+    frequency_type     = "limit_x_days"
+    frequency_interval = 1
+  }
+
+  trigger_config = {
+    type      = "condition"
+    operator  = ">"
+    threshold = 5000
+    trigger   = "on_condition_met"
+    query_json = jsonencode({
+      query_class  = "OrgDailySpendQuery"
+      query_object = { measures = ["sum_spend"] }
+      period       = { period = 1, grain = "day" }
+    })
+  }
+
+  message_config_json = jsonencode({
+    sections = [
+      # 1. A sentence that states yesterday's spend and compares it with the
+      #    same day last week.
+      {
+        section_type               = "paragraph"
+        include_period_over_period = true
+        body_template = join(" ", [
+          "{{ period_analyzed }}, {{ metric_name | lower }} exceeded the threshold",
+          "of **{{ threshold }}** at **{{ latest_measure_value }}**,",
+          "{{ latest_measure_value_pct_change }} from the",
+          "{{ previous_period_measure_value }} the {{ previous_period }}.",
+        ])
+        query = {
+          query_class  = "OrgDailySpendQuery"
+          query_object = { measures = ["sum_spend"] }
+          period       = { period = 1, grain = "day" }
+          compare_with = { period = 7, grain = "day" }
+        }
+      },
+      # 2. Daily spend for the last 30 days, with the threshold drawn as a line.
+      {
+        section_type         = "chart"
+        threshold            = 5000
+        highlight_last_point = true
+        query = {
+          query_class = "OrgDailySpendQuery"
+          query_object = {
+            measures   = ["sum_spend"]
+            dimensions = ["day"]
+            sort       = [{ field = "day", direction = "asc" }]
+          }
+          period = { period = 30, grain = "day", fill_missing_dates = true }
+        }
+      },
+      # 3. The 10 services with the most spend yesterday.
+      {
+        section_type = "table"
+        title        = "Top services by spend"
+        columns      = ["Service", "Spend", "% Change"]
+        query = {
+          query_class = "OrgDailySpendQuery"
+          query_object = {
+            sort  = [{ field = "sum_spend", direction = "desc" }]
+            limit = 10
+          }
+          period = { period = 1, grain = "day" }
+        }
+      },
+    ]
+  })
+}
+
 # A budget monitor: it emails when actual spend passes 80% and 100% of the
-# budget.
+# budget. It uses the same three sections. A paragraph with no body_template
+# gets the budget sentence that SELECT generates.
 resource "select_monitor" "budget" {
   name        = "Acme Monthly budget"
   data_source = "budget"
@@ -37,47 +119,35 @@ resource "select_monitor" "budget" {
 
   message_config_json = jsonencode({
     sections = [
-      { section_type = "title" },
-    ]
-  })
-}
-
-# A condition monitor: it posts to Slack when daily spend is more than 5000.
-# GET /v2/monitors/query-classes lists the query classes and their columns.
-resource "select_monitor" "daily_spend" {
-  name        = "Daily spend above 5000"
-  data_source = "organization_spend"
-  state       = "enabled"
-  schedule    = "daily"
-
-  destination_ids = [select_slack_alert_destination.alerts.id]
-
-  notification_frequency_config = {
-    frequency_type     = "limit_x_days"
-    frequency_interval = 1
-  }
-
-  trigger_config = {
-    type      = "condition"
-    operator  = ">"
-    threshold = 5000
-    trigger   = "on_condition_met"
-    query_json = jsonencode({
-      query_class  = "OrgDailySpendQuery"
-      query_object = { measures = ["spend"] }
-      period       = { period = 1, grain = "day" }
-    })
-  }
-
-  message_config_json = jsonencode({
-    sections = [
-      { section_type = "title" },
+      {
+        section_type = "paragraph"
+        query = {
+          query_class  = "OrgDailySpendQuery"
+          query_object = { measures = ["sum_spend"] }
+          period       = { period = 1, grain = "day" }
+        }
+      },
       {
         section_type = "chart"
         query = {
-          query_class  = "OrgDailySpendQuery"
-          query_object = { measures = ["spend"] }
-          period       = { period = 30, grain = "day" }
+          query_class = "OrgDailySpendQuery"
+          query_object = {
+            measures   = ["sum_spend"]
+            dimensions = ["day"]
+            sort       = [{ field = "day", direction = "asc" }]
+          }
+        }
+      },
+      {
+        section_type = "table"
+        title        = "Top services by spend"
+        columns      = ["Service", "Spend"]
+        query = {
+          query_class = "OrgDailySpendQuery"
+          query_object = {
+            sort  = [{ field = "sum_spend", direction = "desc" }]
+            limit = 10
+          }
         }
       },
     ]
@@ -92,7 +162,7 @@ resource "select_monitor" "daily_spend" {
 
 - `data_source` (String) The data the monitor reads. `custom` runs the monitor's own SQL, and requires a `custom_sql_results` section carrying it in `custom_sql_query`, and a `snowflake_account_id` to run it against.
 - `destination_ids` (Set of String) The ids of the alert destinations the monitor sends to. Use the `id` of a `select_slack_alert_destination`, `select_email_alert_destination` or `select_ms_teams_alert_destination`.
-- `message_config_json` (String) The message the monitor sends, as a JSON-encoded `MonitorMessageConfig`: `{"title": ..., "sections": [...]}`. Use `jsonencode()`. SELECT adds defaults and generated text, such as a chart title. These additions do not show as a change. A change to a key that the configuration sets shows as a change.
+- `message_config_json` (String) The message the monitor sends, as a JSON-encoded `MonitorMessageConfig`: `{"title": ..., "sections": [...]}`. Use `jsonencode()`. A typical message has three sections, in this order: `paragraph`, `chart` and `table`. SELECT adds defaults and generated text, such as a chart title. These additions do not show as a change. A change to a key that the configuration sets shows as a change.
 - `name` (String) The monitor's name, as it appears in the feed.
 - `notification_frequency_config` (Attributes) How often the monitor can send a notification. (see [below for nested schema](#nestedatt--notification_frequency_config))
 - `schedule` (String) How often the monitor runs. `cron` reads `cron` for the schedule.
@@ -196,6 +266,22 @@ After an import, the first plan can show a change to `trigger_config`, `query_js
 SELECT adds keys to these documents when it stores them: defaults such as `period.date_column`, and generated text such as a chart title or a paragraph body. The provider compares only the keys that the configuration sets. A key that only SELECT sets does not show as a change. A change to a key that the configuration sets shows as a change. A `null` in the configuration sets nothing, so a value that SELECT fills in for it does not show as a change.
 
 The optional fields of `trigger_config` show a change when SELECT holds a value that the configuration does not set, with two exceptions. `trigger_on_upper_band` and `trigger_on_lower_band` do not show their default, `true`. An unset `query_json` on a `budget_threshold` trigger does not show a query that SELECT holds.
+
+### The message is usually a paragraph, a chart and a table
+
+`message_config_json.sections` is rendered top to bottom. A typical message has three sections, in this order:
+
+| order | `section_type` | purpose | usual settings |
+|---|---|---|---|
+| 1 | `paragraph` | States the result in one sentence. | The trigger's measure over one period. `include_period_over_period = true` and a `compare_with` period to show the change. `body_template` for custom text, or null for generated text. |
+| 2 | `chart` | Shows the trend. | The same measure over 30 periods, with the date grain as the only dimension and sorted ascending. `threshold` for a `condition` monitor, `bands` for an anomaly monitor. `highlight_last_point = true` for a non-anomaly monitor. |
+| 3 | `table` | Shows what drives the result. | `columns` with the column titles from `GET /v2/monitors/query-classes/{query_class}/columns`, sorted by the measure descending, with a `limit` of 10. |
+
+A `custom` monitor is different: its message has one `custom_sql_results` section.
+
+Each section has `enabled`, with a default of `true`. To hide a section, set `enabled = false`. Do not remove it from the list.
+
+The paragraph `body_template` is a Jinja template. Some of the values it can use are `period_analyzed`, `metric_name`, `latest_measure_value`, `latest_measure_value_pct_change`, `previous_period_measure_value`, `previous_period` and `threshold`. Do not use the `%{` sequence in a Terraform string, because Terraform reads it as a template directive. Jinja tags such as `{% if %}` are safe.
 
 ### An update replaces the full monitor
 

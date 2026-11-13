@@ -119,7 +119,8 @@ func monitorResourceSchema(ctx context.Context) schema.Schema {
 	s.Attributes["message_config_json"] = schema.StringAttribute{
 		Required: true,
 		Description: "The message the monitor sends, as a JSON-encoded `MonitorMessageConfig`: " +
-			"`{\"title\": ..., \"sections\": [...]}`. Use `jsonencode()`. SELECT adds defaults and " +
+			"`{\"title\": ..., \"sections\": [...]}`. Use `jsonencode()`. A typical message has three " +
+			"sections, in this order: `paragraph`, `chart` and `table`. SELECT adds defaults and " +
 			"generated text, such as a chart title. These additions do not show as a change. " +
 			"A change to a key that the configuration sets shows as a change.",
 	}
