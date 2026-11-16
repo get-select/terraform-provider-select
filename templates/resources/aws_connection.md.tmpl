@@ -33,7 +33,7 @@ An import recovers `credentials` along with the rest of the connection, so the f
 
 SELECT assumes the role in `role_arn`. Its trust policy names SELECT's AWS account, with the external ID shown in SELECT as the `sts:ExternalId` condition; both values are shown where you add an AWS account in SELECT. The role needs to list and read the report objects under `s3_prefix`.
 
-Terraform reads the role back from SELECT on every refresh, so a role changed outside Terraform shows up as a difference in the next plan, and applying it sets the configured role again. An account with no role reads back with an empty `role_arn`.
+Terraform reads the role back from SELECT on every refresh, so a role changed outside Terraform shows up as a difference in the next plan, and applying it sets the configured role again. An account with no role reads back with a null `role_arn`.
 
 ### Creating a connection validates it against S3
 

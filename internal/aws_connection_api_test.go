@@ -323,9 +323,9 @@ func awsConnectionState(t *testing.T, model *resource_aws_connection.AwsConnecti
 	return state
 }
 
-// readAwsConnection runs Read against a test server answering the account and
-// its credentials endpoint.
-func readAwsConnection(t *testing.T, credentials string) (resource_aws_connection.AwsConnectionModel, []string) {
+// runAwsRead runs Read against a test server answering the account, and its
+// credentials endpoint with the given status and body.
+func runAwsRead(t *testing.T, credentialsStatus int, credentials string) (resource.ReadResponse, []string) {
 	t.Helper()
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -335,6 +335,7 @@ func readAwsConnection(t *testing.T, credentials string) (resource_aws_connectio
 		case "/v2/aws-accounts/2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01":
 			_, _ = w.Write([]byte(`{"id":"2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01","etag":"\"abc123\"","name":"Acme Production","connection_id":"8b2d1f0a-3c4e-4a5b-9c6d-7e8f9a0b1c2d","aws_account_id":"123456789012","s3_bucket":"acme-cur","s3_prefix":"reports/prod","region":"us-east-1","sync_enabled":true,"create_time":"2025-01-01T00:00:00Z","update_time":"2025-01-02T00:00:00Z"}`))
 		case "/v2/aws-accounts/2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01/credentials":
+			w.WriteHeader(credentialsStatus)
 			_, _ = w.Write([]byte(credentials))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -349,18 +350,28 @@ func readAwsConnection(t *testing.T, credentials string) (resource_aws_connectio
 	req := resource.ReadRequest{State: awsConnectionState(t, &state)}
 	resp := resource.ReadResponse{State: awsConnectionState(t, &state)}
 	r.Read(context.Background(), req, &resp)
+	return resp, paths
+}
+
+// readAwsConnection runs a Read whose credentials endpoint answers 200 with the
+// given body, and returns the state it leaves.
+func readAwsConnection(t *testing.T, credentials string) (resource_aws_connection.AwsConnectionModel, []string) {
+	t.Helper()
+	resp, paths := runAwsRead(t, http.StatusOK, credentials)
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("unexpected diagnostics: %v", resp.Diagnostics)
 	}
 
 	var got resource_aws_connection.AwsConnectionModel
-	resp.State.Get(context.Background(), &got)
+	if diags := resp.State.Get(context.Background(), &got); diags.HasError() {
+		t.Fatalf("reading state: %v", diags)
+	}
 	return got, paths
 }
 
 // A role changed outside Terraform has to show up as drift, and an import has
 // to recover the role: both come from Read taking the role SELECT holds.
-func TestAwsReadTakesTheRoleSelectHolds(t *testing.T) {
+func TestAwsReadTakesTheRoleSELECTHolds(t *testing.T) {
 	got, paths := readAwsConnection(t, `{"role_arn":"arn:aws:iam::123456789012:role/changed-outside-terraform"}`)
 
 	if got.Credentials.RoleArn.ValueString() != "arn:aws:iam::123456789012:role/changed-outside-terraform" {
@@ -378,5 +389,22 @@ func TestAwsReadRecordsAMissingRoleAsNull(t *testing.T) {
 
 	if !got.Credentials.RoleArn.IsNull() {
 		t.Errorf("an account with no role should read back with a null role_arn, got %v", got.Credentials.RoleArn)
+	}
+}
+
+// Only the account's own GET can say the connection is gone. A 404 on the role
+// after the account answered is an error, not a reason to drop a connection that
+// still exists and plan a duplicate.
+func TestAwsReadKeepsTheConnectionWhenTheRoleIsNotFound(t *testing.T) {
+	resp, _ := runAwsRead(t, http.StatusNotFound, `{"detail":"Not Found"}`)
+
+	if !resp.Diagnostics.HasError() {
+		t.Fatal("a 404 on the role should fail the read")
+	}
+	if resp.State.Raw.IsNull() {
+		t.Error("a 404 on the role should not remove the connection from state")
+	}
+	if detail := resp.Diagnostics.Errors()[0].Detail(); !strings.Contains(detail, "read the AWS connection's role") {
+		t.Errorf("the error should say the role lookup failed, got: %s", detail)
 	}
 }

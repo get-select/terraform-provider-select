@@ -125,6 +125,10 @@ type awsConnectionResponse struct {
 // account itself carries no credentials, so the role takes a second request;
 // reading it is what lets a refresh see a role changed outside Terraform, and an
 // import recover the credentials block.
+//
+// Only the account's own GET can say the connection is gone. A failure on the
+// role is returned as a diagnostic rather than an apiError, so Read never drops
+// a connection that still exists because the second request answered 404.
 func fetchAwsConnection(
 	ctx context.Context,
 	client *APIClient,
@@ -140,8 +144,11 @@ func fetchAwsConnection(
 
 	var credentials awsCredentialsInfoResponse
 	apiErr, diags = client.doRequest(ctx, http.MethodGet, awsConnectionCredentialsEndpoint(id), nil, &credentials, requestOptions{})
-	if diags.HasError() || apiErr != nil {
-		return nil, apiErr, diags
+	if apiErr != nil {
+		diags.Append(awsConnectionAPIDiagnostic("read the AWS connection's role", apiErr))
+	}
+	if diags.HasError() {
+		return nil, nil, diags
 	}
 	connection.Credentials = &credentials
 
