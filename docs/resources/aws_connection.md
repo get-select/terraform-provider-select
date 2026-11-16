@@ -92,7 +92,7 @@ terraform import select_aws_connection.example 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8
 
 The ID is assigned by SELECT when the connection is added, so unlike a Snowflake account there is nothing about your AWS setup that predicts it. It is the `id` attribute, and it is also the last path segment of the connection's page in the SELECT UI.
 
-An import doesn't recover `credentials` yet: put the role in your configuration before importing, and the first apply after the import will re-send it — which makes SELECT revalidate the connection against S3.
+An import recovers `credentials` along with the rest of the connection, so the first plan after it shows no change as long as the configured role matches the one SELECT holds.
 
 ## Additional Information
 
@@ -100,7 +100,7 @@ An import doesn't recover `credentials` yet: put the role in your configuration 
 
 SELECT assumes the role in `role_arn`. Its trust policy names SELECT's AWS account, with the external ID shown in SELECT as the `sts:ExternalId` condition; both values are shown where you add an AWS account in SELECT. The role needs to list and read the report objects under `s3_prefix`.
 
-This resource doesn't read the role back from SELECT yet, so a change made outside Terraform is invisible to a refresh. Terraform re-sends the role only when the configured value changes.
+Terraform reads the role back from SELECT on every refresh, so a role changed outside Terraform shows up as a difference in the next plan, and applying it sets the configured role again. An account with no role reads back with a null `role_arn`.
 
 ### Creating a connection validates it against S3
 
