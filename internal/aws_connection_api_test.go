@@ -172,8 +172,9 @@ func TestAwsUpdatePayloadNeverSendsNull(t *testing.T) {
 	}
 }
 
-// SELECT returns neither half of the key pair, so a response can only ever blank
-// the credentials block. What the configuration says is the whole record of it.
+// SELECT returns no credentials on this resource, so a response can only ever
+// blank the credentials block. What the configuration says is the whole record
+// of it.
 func TestAwsApplyResponseKeepsCredentialsFromState(t *testing.T) {
 	state := awsConnection()
 	model := awsConnection()

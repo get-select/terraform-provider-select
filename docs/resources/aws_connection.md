@@ -55,7 +55,7 @@ resource "select_aws_connection" "sandbox" {
 ### Required
 
 - `aws_account_id` (String) The 12-digit id of the AWS account that created the Cost and Usage Report export: the payer account, or a member account exporting its own usage.
-- `credentials` (Attributes) The IAM user SELECT authenticates as when it reads the Cost and Usage Report. The secret in this block is stored in a secret store and never returned by the API, so SELECT cannot detect changes made to it outside Terraform. (see [below for nested schema](#nestedatt--credentials))
+- `credentials` (Attributes) The role SELECT assumes to read the Cost and Usage Report. (see [below for nested schema](#nestedatt--credentials))
 - `name` (String) Display name for the account, as shown throughout SELECT.
 - `region` (String) The AWS region the bucket is in, such as `us-east-1`. SELECT reads the bucket through this region's S3 endpoint.
 - `s3_bucket` (String) The S3 bucket AWS delivers this account's Cost and Usage Report to.
@@ -92,7 +92,7 @@ terraform import select_aws_connection.example 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8
 
 The ID is assigned by SELECT when the connection is added, so unlike a Snowflake account there is nothing about your AWS setup that predicts it. It is the `id` attribute, and it is also the last path segment of the connection's page in the SELECT UI.
 
-An import cannot recover `credentials`: SELECT returns no credentials on this resource. Put the credentials in your configuration before importing, and the first apply after the import will re-send them — which makes SELECT revalidate the connection against S3.
+An import doesn't recover `credentials` yet: put the role in your configuration before importing, and the first apply after the import will re-send it — which makes SELECT revalidate the connection against S3.
 
 ## Additional Information
 
@@ -100,7 +100,7 @@ An import cannot recover `credentials`: SELECT returns no credentials on this re
 
 SELECT assumes the role in `role_arn`. Its trust policy names SELECT's AWS account, with the external ID shown in SELECT as the `sts:ExternalId` condition; both values are shown where you add an AWS account in SELECT. The role needs to list and read the report objects under `s3_prefix`.
 
-This resource doesn't read the role back from SELECT, so a change made outside Terraform is invisible to a refresh. Terraform re-sends the role only when the configured value changes.
+This resource doesn't read the role back from SELECT yet, so a change made outside Terraform is invisible to a refresh. Terraform re-sends the role only when the configured value changes.
 
 ### Creating a connection validates it against S3
 
