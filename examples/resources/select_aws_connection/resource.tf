@@ -12,8 +12,7 @@ resource "select_aws_connection" "production" {
   region         = "us-east-1"
 
   credentials = {
-    authentication_method = "role"
-    role_arn              = "arn:aws:iam::123456789012:role/select-cur-read"
+    role_arn = "arn:aws:iam::123456789012:role/select-cur-read"
   }
 }
 
@@ -27,11 +26,8 @@ resource "select_aws_connection" "sandbox" {
   s3_bucket      = "acme-sandbox-cur"
   region         = "eu-west-1"
 
-  # An IAM user's access key pair works too, with the same read access.
   credentials = {
-    authentication_method = "access_key"
-    access_key_id         = var.aws_sandbox_access_key_id
-    secret_access_key     = var.aws_sandbox_secret_access_key
+    role_arn = "arn:aws:iam::210987654321:role/select-cur-read"
   }
 
   # Hold off syncing until the connection has been reviewed.

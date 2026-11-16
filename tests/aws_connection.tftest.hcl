@@ -4,7 +4,7 @@
 #
 # These are separate from provider.tftest.hcl because creating a connection makes
 # SELECT read the Cost and Usage Report out of S3 for real: the bucket, prefix
-# and IAM user have to work, and the connection is added to and removed from the
+# and role have to work, and the connection is added to and removed from the
 # target organization. Run with `make test-aws` once the TF_VAR_aws_* variables
 # are set, or let CI run it from the credentials it holds as secrets.
 #
