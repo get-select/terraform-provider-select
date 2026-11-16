@@ -155,10 +155,7 @@ resources:
               with `terraform import` to bring an existing connection under management.
           credentials:
             description: >-
-              The IAM user SELECT authenticates as when it reads the Cost and Usage
-              Report. The secret in this block is stored in a secret store and never
-              returned by the API, so SELECT cannot detect changes made to it outside
-              Terraform.
+              The role SELECT assumes to read the Cost and Usage Report.
           etag:
             description: >-
               Opaque strong ETag for this connection. Sent as `If-Match` on updates and

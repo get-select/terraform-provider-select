@@ -346,7 +346,7 @@ terraform import select_aws_connection.<resource_name> <aws_connection_id>
 terraform import select_aws_connection.production 2f1c8b4e-9a6d-4d1f-9d0e-7d3a5b6c8e01
 ```
 
-**Note**: An import cannot recover `credentials`. SELECT returns neither the access key id nor the secret on this resource, so put both in your configuration before importing. The first `terraform plan` after the import will show `credentials` as a change; applying it re-sends them, which makes SELECT revalidate the connection against S3.
+**Note**: An import doesn't recover `credentials` yet, so put the role in your configuration before importing. The first `terraform plan` after the import will show `credentials` as a change; applying it re-sends the role, which makes SELECT revalidate the connection against S3.
 
 ### Importing a Budget
 

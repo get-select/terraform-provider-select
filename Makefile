@@ -143,7 +143,7 @@ test-bigquery:
 #   TF_VAR_select_api_key      an API key with aws_accounts:read and :write
 #   TF_VAR_select_organization_id
 #   TF_VAR_aws_account_id, TF_VAR_aws_s3_bucket, TF_VAR_aws_s3_prefix,
-#   TF_VAR_aws_region, TF_VAR_aws_access_key_id, TF_VAR_aws_secret_access_key
+#   TF_VAR_aws_region, TF_VAR_aws_role_arn
 test-aws:
 	@echo "Running AWS connection tests against a real AWS account..."
 	cd tests && TF_CLI_CONFIG_FILE=../.terraformrc terraform test -filter=aws_connection.tftest.hcl

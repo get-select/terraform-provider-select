@@ -353,16 +353,9 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "aws_access_key_id" {
-  description = "Access key id of the IAM user SELECT authenticates as"
+variable "aws_role_arn" {
+  description = "ARN of the role SELECT assumes. Its trust policy names SELECT's AWS account, with the test organization's external ID"
   type        = string
-  default     = ""
-}
-
-variable "aws_secret_access_key" {
-  description = "Secret access key paired with aws_access_key_id"
-  type        = string
-  sensitive   = true
   default     = ""
 }
 
@@ -724,9 +717,7 @@ resource "select_aws_connection" "test" {
   region         = var.aws_region
 
   credentials = {
-    authentication_method = "access_key"
-    access_key_id         = var.aws_access_key_id
-    secret_access_key     = var.aws_secret_access_key
+    role_arn = var.aws_role_arn
   }
 
   sync_enabled = var.aws_sync_enabled
