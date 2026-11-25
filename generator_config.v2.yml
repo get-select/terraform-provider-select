@@ -213,6 +213,8 @@ resources:
   # destination_ids and partition_config are reshaped. monitor_resource.go
   # writes these five attributes by hand. The run and feed fields change on
   # every run and do not configure the monitor, so they are not in state.
+  # connection_id is not in state either: this resource names a custom SQL
+  # monitor's connection with snowflake_account_id.
   monitor:
     create:
       path: /monitors
@@ -244,6 +246,7 @@ resources:
         - dismiss_time
         - dismissed_by
         - dismissed_partitions
+        - connection_id
       attributes:
         aliases:
           monitor_id: id
