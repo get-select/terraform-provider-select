@@ -240,6 +240,7 @@ resources:
         - latest_run_trigger_status
         - last_run_finish_time
         - next_run_time
+        - deleted_templated_value_keys
         - dismiss_time
         - dismissed_by
         - dismissed_partitions
