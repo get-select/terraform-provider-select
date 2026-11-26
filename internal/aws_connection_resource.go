@@ -18,6 +18,7 @@ func NewAwsConnectionResource() resource.Resource {
 		itemEndpoint: func(m *resource_aws_connection.AwsConnectionModel) string {
 			return awsConnectionEndpoint(m.Id.ValueString())
 		},
+		fetch: fetchAwsConnection,
 		identity: func(m *resource_aws_connection.AwsConnectionModel) v2Identity {
 			return v2Identity{Id: m.Id, Etag: m.Etag}
 		},

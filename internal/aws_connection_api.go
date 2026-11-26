@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"terraform-provider-select/internal/provider/resource_aws_connection"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -19,6 +20,10 @@ const awsAccountsEndpoint = "/v2/aws-accounts"
 
 func awsConnectionEndpoint(id string) string {
 	return fmt.Sprintf("%s/%s", awsAccountsEndpoint, id)
+}
+
+func awsConnectionCredentialsEndpoint(id string) string {
+	return awsConnectionEndpoint(id) + "/credentials"
 }
 
 // awsConnectionErrors words the failures every v2 resource can hit.
@@ -88,8 +93,16 @@ type awsConnectionUpdatePayload struct {
 	SyncEnabled  *bool                  `json:"sync_enabled,omitempty"`
 }
 
-// awsConnectionResponse mirrors AwsAccount. It carries no credentials, so the
-// role comes from the configuration (see applyAwsConnectionResponse).
+// awsCredentialsInfoResponse mirrors AwsCredentialsInfo, what
+// GET /aws-accounts/{id}/credentials returns. role_arn is null for an account
+// with no role yet.
+type awsCredentialsInfoResponse struct {
+	RoleArn *string `json:"role_arn"`
+}
+
+// awsConnectionResponse mirrors AwsAccount, which carries no credentials.
+// Credentials is filled in by fetchAwsConnection from the account's credentials
+// endpoint, so it is set on a read and nil on a create or update response.
 type awsConnectionResponse struct {
 	Id                     string  `json:"id"`
 	Etag                   string  `json:"etag"`
@@ -104,6 +117,42 @@ type awsConnectionResponse struct {
 	LastSuccessfulSyncTime *string `json:"last_successful_sync_time"`
 	CreateTime             string  `json:"create_time"`
 	UpdateTime             string  `json:"update_time"`
+
+	Credentials *awsCredentialsInfoResponse `json:"-"`
+}
+
+// fetchAwsConnection reads an AWS connection and the role it signs in with. The
+// account itself carries no credentials, so the role takes a second request;
+// reading it is what lets a refresh see a role changed outside Terraform, and an
+// import recover the credentials block.
+//
+// Only the account's own GET can say the connection is gone. A failure on the
+// role is returned as a diagnostic rather than an apiError, so Read never drops
+// a connection that still exists because the second request answered 404.
+func fetchAwsConnection(
+	ctx context.Context,
+	client *APIClient,
+	model *resource_aws_connection.AwsConnectionModel,
+) (*awsConnectionResponse, *apiError, diag.Diagnostics) {
+	id := model.Id.ValueString()
+
+	var connection awsConnectionResponse
+	apiErr, diags := client.doRequest(ctx, http.MethodGet, awsConnectionEndpoint(id), nil, &connection, requestOptions{})
+	if diags.HasError() || apiErr != nil {
+		return nil, apiErr, diags
+	}
+
+	var credentials awsCredentialsInfoResponse
+	apiErr, diags = client.doRequest(ctx, http.MethodGet, awsConnectionCredentialsEndpoint(id), nil, &credentials, requestOptions{})
+	if apiErr != nil {
+		diags.Append(awsConnectionAPIDiagnostic("read the AWS connection's role", apiErr))
+	}
+	if diags.HasError() {
+		return nil, nil, diags
+	}
+	connection.Credentials = &credentials
+
+	return &connection, nil, nil
 }
 
 func buildAwsCredentials(credentials resource_aws_connection.CredentialsValue) awsCredentialsPayload {
@@ -144,10 +193,11 @@ func buildAwsConnectionUpdate(plan, state *resource_aws_connection.AwsConnection
 	return payload
 }
 
-// applyAwsConnectionResponse writes an API response onto the model. The
-// credentials block is carried over from source rather than the response, since
-// the API returns no credentials on this resource and Terraform's own
-// configuration is the only record of them.
+// applyAwsConnectionResponse writes an API response onto the model. A read
+// carries the role SELECT holds, which replaces what state has, so a role
+// changed outside Terraform shows up as drift. A create or update response
+// carries none, and the credentials block is kept from source: the write just
+// sent it.
 //
 // Nothing here goes through a preserveEquivalent* helper: SELECT stores every
 // field on this resource exactly as given and returns it unchanged, so there is
@@ -175,6 +225,14 @@ func applyAwsConnectionResponse(
 	model.UpdateTime = types.StringValue(connection.UpdateTime)
 
 	model.Credentials = source.Credentials
+	if connection.Credentials != nil {
+		credentials, credentialDiags := resource_aws_connection.NewCredentialsValue(
+			resource_aws_connection.CredentialsValue{}.AttributeTypes(ctx),
+			map[string]attr.Value{"role_arn": stringValue(connection.Credentials.RoleArn)},
+		)
+		diags.Append(credentialDiags...)
+		model.Credentials = credentials
+	}
 
 	return diags
 }
